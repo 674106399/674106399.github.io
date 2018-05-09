@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title><![CDATA[论文笔记：Faster R-CNN Features for Instance Search]]></title>
+    <url>%2F2018%2F05%2F07%2F%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%9AFaster%20R-CNN%20Features%20for%20Instance%20Search%2F</url>
+    <content type="text"><![CDATA[[CVPR 2016] Faster R-CNN Features for Instance SearchPaper: Link Abstract 研究基于CNN的目标检测网络得到的feature是否有利于image retrieval 研究对目标检测网络进行fine-tune后检索效果是否有所提升 实验数据集： Oxford Building 5K Paris Buildings 6K TRECVid Instance Search 2013 What they do 通过一次前向传播从CNN中提取出图像的全局和局部特征 利用从RPN中学到的位置信息设计空间重排方案 分析了对目标检测CNN进行fine-tune对检索的影响 Conclusion 利用目标检测的CNN特征可以用于图像检索 使用检索的图像对CNN进行微调，可以较大提升检索效果 IntroductionBackground 利用预训练的CNNs提取现成的特征，在图像检索通用数据集上获得了不错的效果 实例检索系统 = 快速筛选（对数据库进行重排） + 高级检索（一些高计算量的阶段）。 常见的重排方式有几何验证和空间分析 空间分析重排是指，使用不同尺寸的滑动窗口滑过图像，获得图像内部不同局部区域的特征表达，将这些局部特征与查询实例进行比对。 Related WorkCNNs for Instance Search 早期研究中利用全连接层的特征进行图像检索 将从不同图像sub-patches提取的全连接层特征进行结合，得到更好的结果 研究发现图像检索领域使用卷积层特征进行，比全连接层特征结果更好 Object Detection CNNs 早期使用滑动窗口方法 随后R-CNN采用Selective Search 现在使用端到端的方法 MethodologyCNN-based Representations 作者将查询实例定义为找到包含查询目标的边界框 提出两种池化方案： Image-wise pooling of activations(IPA):忽略操作目标建议的所有层，只从最后一个卷积层提取特征，对所有滤波器的输出进行求和 Region-wise pooling of activations(RPA)：利用区域池化层提取RPN得到的目标建议的特征。对于每个建议窗口，都可以利用其中RoI池化层的输出来生成表达。 求和池化需要进行L2标准化、白化、L2标准化，而最大池化仅仅进行一次L2标准化 Fine-tuning Faster R-CNN 作者提出了两种微调方案： 只更新分类这一分支的全连接层的权重 前两个卷积层之后的所有层都更新 Image Retrieval 作者提出检索由三步构成： 快速筛选 空间重排 扩展查询 快速筛选是利用IPA，即图像的全局表达进行一次过滤，只保留前N个结果 空间重排由两种方法： CA-SR：假设类别不可知，将查询实例经过网络得到的所有RPA，与快速筛选后剩下的每幅图的RPA进行比较 CS-SR：使用微调后的网络，可以用每个RPN预测的分类得分作为查询对象的相似分数 扩展查询策略为取重排后的前M个结果的特征向量，对他们进行求和平均，用平均后得到的结果重新进行一次查询 Notes图像检索实际上是把图片转为向量在高维空间中位置的比较，两个向量越近，距离越短，则说明越相似。直接使用从整张图片得到的特征向量进行比对的图片检索系统效果有很大的优化空间，因为图片中与检索目标无关的信息越多，就会加大向量在其他维度的权重，进而使得向量在空间中的位置发生偏移，与希望得到的结果的距离变大，这种现象随着查询目标在原图中所占比例的大小越小、显著性越低、对比越不强烈，检索偏差也会越大。 举一个比较简单而极端的例子：我们可以想象有一个10维的空间，在这个空间中，只有第1，2，3维的方向上代表了我们所查询的对象的表达（实际上可能每个维度上都有不同的权重，在这里我们极端地假设其他维度上权重为0）。通过CNN得到的特征向量，实际上是由图片内的内容共同组成的，与我们所查询的对象无关的内容也掺杂其中，这些无关内容在10维空间中标示为其他维度上的不同权重。 因此，图片全局的表达可以用作第一步的快速筛选，然后再使用局部表达精确检索。]]></content>
+      <categories>
+        <category>Technology</category>
+      </categories>
+      <tags>
+        <tag>CV</tag>
+        <tag>Image Retrieval</tag>
+        <tag>Deep Learning</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title><![CDATA[test article]]></title>
+    <url>%2F2018%2F05%2F07%2Ftest-article%2F</url>
+    <content type="text"><![CDATA[这是一篇测试文章]]></content>
+  </entry>
+</search>
