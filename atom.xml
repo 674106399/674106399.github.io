@@ -6,7 +6,7 @@
   <link href="/atom.xml" rel="self"/>
   
   <link href="http://yoursite.com/"/>
-  <updated>2018-07-13T18:07:30.409Z</updated>
+  <updated>2018-07-14T18:24:14.489Z</updated>
   <id>http://yoursite.com/</id>
   
   <author>
@@ -15,6 +15,33 @@
   </author>
   
   <generator uri="http://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>带有返回值的多线程Python实例</title>
+    <link href="http://yoursite.com/2018/07/14/threads/"/>
+    <id>http://yoursite.com/2018/07/14/threads/</id>
+    <published>2018-07-14T18:02:14.000Z</published>
+    <updated>2018-07-14T18:24:14.489Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="计算密集型-vs-IO密集型"><a href="#计算密集型-vs-IO密集型" class="headerlink" title="计算密集型 vs. IO密集型"></a>计算密集型 vs. IO密集型</h2><p>我们根据任务对CPU的使用情况，可以把任务类型分为计算密集型和IO密集型，计算密集型任务需要大量占用计算资源，适合使用多进程执行，每个进程可以使用独立的CPU核心进行计算；IO密集型任务需要的计算量不大，但可能存在大量的IO、网络延迟等待，适合使用多线程执行。</p><h2 id="有返回值的多线程实例"><a href="#有返回值的多线程实例" class="headerlink" title="有返回值的多线程实例"></a>有返回值的多线程实例</h2><p>Python初始的多线程对返回值的支持不是很好，我们可以通过类的继承来创建一个带有返回值的多进程类。</p><figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">from threading import Thread</span><br><span class="line"> </span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">MyThread</span>(<span class="title">Thread</span>):</span></span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(<span class="keyword">self</span>, param1)</span></span><span class="symbol">:</span></span><br><span class="line">        Thread.__init_<span class="number">_</span>(<span class="keyword">self</span>)</span><br><span class="line">        <span class="keyword">self</span>.param1 = param1</span><br><span class="line">        <span class="keyword">self</span>.result = None</span><br><span class="line">        </span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">foo</span><span class="params">(<span class="keyword">self</span>, param1)</span></span><span class="symbol">:</span></span><br><span class="line">        result = None</span><br><span class="line">        <span class="comment"># do something</span></span><br><span class="line">        <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">run</span><span class="params">(<span class="keyword">self</span>)</span></span><span class="symbol">:</span></span><br><span class="line">        <span class="keyword">self</span>.result = <span class="keyword">self</span>.foo(<span class="keyword">self</span>.param1)</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">get_result</span><span class="params">(<span class="keyword">self</span>)</span></span><span class="symbol">:</span></span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">self</span>.result</span><br></pre></td></tr></table></figure><p>然后我们就可以轻松地创建多线程：</p><figure class="highlight maxima"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">t_list = []</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">3</span>):</span><br><span class="line">    t = MyThread(i)</span><br><span class="line">    t_list.<span class="built_in">append</span>(t)</span><br><span class="line">    t.start()</span><br><span class="line">    </span><br><span class="line"><span class="keyword">for</span> t <span class="keyword">in</span> t_list:</span><br><span class="line">t.<span class="built_in">join</span>()</span><br><span class="line"><span class="built_in">print</span>(t.get_result())</span><br></pre></td></tr></table></figure><p>启动之后<strong>一定要t.join()</strong>将主程序阻塞，等待子进程运行结束，不然主线程比子线程跑的快，会拿不到结果。</p>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h2 id=&quot;计算密集型-vs-IO密集型&quot;&gt;&lt;a href=&quot;#计算密集型-vs-IO密集型&quot; class=&quot;headerlink&quot; title=&quot;计算密集型 vs. IO密集型&quot;&gt;&lt;/a&gt;计算密集型 vs. IO密集型&lt;/h2&gt;&lt;p&gt;我们根据任务对CPU的使用情况，可以把任
+      
+    
+    </summary>
+    
+      <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
+    
+    
+      <category term="Python" scheme="http://yoursite.com/tags/Python/"/>
+    
+      <category term="Thread" scheme="http://yoursite.com/tags/Thread/"/>
+    
+  </entry>
   
   <entry>
     <title>Multiprocessing实用技能总结</title>
