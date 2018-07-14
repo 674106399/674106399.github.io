@@ -3,7 +3,7 @@
   <entry>
     <title><![CDATA[带有返回值的多线程Python实例]]></title>
     <url>%2F2018%2F07%2F14%2Fthreads%2F</url>
-    <content type="text"><![CDATA[计算密集型 vs. IO密集型我们根据任务对CPU的使用情况，可以把任务类型分为计算密集型和IO密集型，计算密集型任务需要大量占用计算资源，适合使用多进程执行，每个进程可以使用独立的CPU核心进行计算；IO密集型任务需要的计算量不大，但可能存在大量的IO、网络延迟等待，适合使用多线程执行。 有返回值的多线程实例Python初始的多线程对返回值的支持不是很好，我们可以通过类的继承来创建一个带有返回值的多进程类。 12345678910111213141516171819from threading import Thread class MyThread(Thread): def __init__(self, param1): Thread.__init__(self) self.param1 = param1 self.result = None def foo(self, param1): result = None # do something return result def run(self): self.result = self.foo(self.param1) def get_result(self): return self.result 然后我们就可以轻松地创建多线程： 123456789t_list = []for i in range(3): t = MyThread(i) t_list.append(t) t.start() for t in t_list: t.join() print(t.get_result()) 启动之后一定要t.join()将主程序阻塞，等待子进程运行结束，不然主线程比子线程跑的快，会拿不到结果。]]></content>
+    <content type="text"><![CDATA[计算密集型 vs. IO密集型我们根据任务对CPU的使用情况，可以把任务类型分为计算密集型和IO密集型，计算密集型任务需要大量占用计算资源，适合使用多进程执行，每个进程可以使用独立的CPU核心进行计算；IO密集型任务需要的计算量不大，但可能存在大量的IO、网络延迟等待，适合使用多线程执行。 有返回值的多线程实例Python初始的多线程对返回值的支持不是很好，我们可以通过类的继承来创建一个带有返回值的多线程类。 12345678910111213141516171819from threading import Thread class MyThread(Thread): def __init__(self, param1): Thread.__init__(self) self.param1 = param1 self.result = None def foo(self, param1): result = None # do something return result def run(self): self.result = self.foo(self.param1) def get_result(self): return self.result 然后我们就可以轻松地创建多线程： 123456789t_list = []for i in range(3): t = MyThread(i) t_list.append(t) t.start() for t in t_list: t.join() print(t.get_result()) 启动之后一定要t.join()将主程序阻塞，等待子进程运行结束，不然主线程比子线程跑的快，会拿不到结果。]]></content>
       <categories>
         <category>Technology</category>
       </categories>
