@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
+    <title><![CDATA[FAISS文档阅读（一）：预处理与后期处理]]></title>
+    <url>%2F2019%2F05%2F10%2F%E9%A2%84%E5%A4%84%E7%90%86%E4%B8%8E%E5%90%8E%E6%9C%9F%E5%A4%84%E7%90%86%2F</url>
+    <content type="text"><![CDATA[预处理与后期处理预处理与后期处理用于重映射向量和id，把转换处理(transformations)应用到数据，然后用更好的索引来对搜索结果进行重新排序 映射Faiss ID默认情况下，Faiss分配一组id序列给被添加的向量来建立索引。 一些Index类会执行add_with_ids方法，该方法除了提供这些向量本身以外，还会提供64-bit的向量id。在搜索时，该类会返回存储好的id，而不是原始向量。 IndexIDMap这个索引会将另一个索引封装在内部，并在添加和搜索时对id进行转化。该索引维护了一张映射表。 举个例子： 12345index = faiss.IndexFlatL2(xb.shape[1]) ids = np.arange(xb.shape[0])index.add_with_ids(xb, ids) # 这里会报错，因为IndexFlatL2不支持add_with_idsindex2 = faiss.IndexIDMap(index)index2.add_with_ids(xb, ids) # 这里可以正常运行，向量被存储在下一层的索引中 IndexIVF中的IDIndexIVF子类总是存储向量ID，因此IndexIDMap的额外的映射表是浪费空间的。IndexIVF天生就提供了add_with_ids 预转换数据该操作通常在转换数据比建立索引更优先的时候很有用。Transformation类继承VectorTransform。一个VectorTransform类对输入的d_in维向量应用转换方法，并输出大小为d_out的向量。 转换方法 类名称 注释 随机旋转 RandomRotationMatrix 在建立IndexPQ或IndexLSH索引之前有助于重新平衡向量组成 维度重映射 RemapDimensionsTransform 当索引方式有要求的维度，或要对各种维度应用一个随机的排列方式时，减少或增加向量尺寸 PCA PCAMatrix 用于降维 OPQ旋转 OPQMatrix OPQ会对输入的向量进行旋转来使其在PQ编码时更合理。详情查看Optimized product quantization, Ge et al., CVPR’13 转换方法可以被一组向量训练，使用train方法，然后它们可以用apply方法来应用于另一组向量。 一种索引可以被封装于IndexPreTransform索引中来使得映射显式地进行，并使训练过程和索引训练综合进行。 示例：使用PCA来降维配合IndexPreTransform如果输入向量是2048维的，且不得不减少到16 bytes，那么事先用PCA来降维就是合理的。 1234567891011121314# IndexIVFPQ索引应该设定为256维，而不是2048维 coarse_quantizer = faiss.IndexFlatL2 (256) sub_index = faiss.IndexIVFPQ (coarse_quantizer, 256, ncoarse, 16, 8) # PCA 2048-&gt;256 # 在降维后进行了随机旋转(第四个参数) pca_matrix = faiss.PCAMatrix (2048, 256, 0, True) #- 封装索引 index = faiss.IndexPreTransform (pca_matrix, sub_index) # 也需要对PCA进行训练 index.train(...) # PCA要比添加操作更早执行 index.add(...) 示例：升高维数在往向量中插入0的时候，升高维数有时会很有用，这种方法对以下内容有帮助： 让维数d增大4倍 让维数d增大M倍]]></content>
+      <categories>
+        <category>Technology</category>
+      </categories>
+      <tags>
+        <tag>Image Retrieval</tag>
+        <tag>CV</tag>
+        <tag>Deep Learning</tag>
+        <tag>FAISS</tag>
+      </tags>
+  </entry>
+  <entry>
     <title><![CDATA[带有返回值的多线程Python实例]]></title>
     <url>%2F2018%2F07%2F14%2Fthreads%2F</url>
     <content type="text"><![CDATA[计算密集型 vs. IO密集型我们根据任务对CPU的使用情况，可以把任务类型分为计算密集型和IO密集型，计算密集型任务需要大量占用计算资源，适合使用多进程执行，每个进程可以使用独立的CPU核心进行计算；IO密集型任务需要的计算量不大，但可能存在大量的IO、网络延迟等待，适合使用多线程执行。 有返回值的多线程实例Python初始的多线程对返回值的支持不是很好，我们可以通过类的继承来创建一个带有返回值的多线程类。 12345678910111213141516171819from threading import Thread class MyThread(Thread): def __init__(self, param1): Thread.__init__(self) self.param1 = param1 self.result = None def foo(self, param1): result = None # do something return result def run(self): self.result = self.foo(self.param1) def get_result(self): return self.result 然后我们就可以轻松地创建多线程： 123456789t_list = []for i in range(3): t = MyThread(i) t_list.append(t) t.start() for t in t_list: t.join() print(t.get_result()) 启动之后一定要t.join()将主程序阻塞，等待子进程运行结束，不然主线程比子线程跑的快，会拿不到结果。]]></content>

@@ -1,0 +1,59 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description"><title>FAISS文档阅读（一）：预处理与后期处理 | 镜子的掌纹</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.0"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/normalize/8.0.0/normalize.min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"><link rel="alternate" type="application/atom+xml" href="/atom.xml"></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">FAISS文档阅读（一）：预处理与后期处理</h1><a id="logo" href="/.">镜子的掌纹</a><p class="description"></p></div><div id="nav-menu"><a class="current" href="/."><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a><a href="/atom.xml"><i class="fa fa-rss"> 订阅</i></a></div></div><div class="pure-g" id="layout"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">FAISS文档阅读（一）：预处理与后期处理</h1><div class="post-meta">May 10, 2019<span> | </span><span class="category"><a href="/categories/Technology/">Technology</a></span><script src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><div class="post-content"><h1 id="预处理与后期处理"><a href="#预处理与后期处理" class="headerlink" title="预处理与后期处理"></a>预处理与后期处理</h1><p>预处理与后期处理用于重映射向量和id，把转换处理(transformations)应用到数据，然后用更好的索引来对搜索结果进行重新排序</p>
+<h2 id="映射Faiss-ID"><a href="#映射Faiss-ID" class="headerlink" title="映射Faiss ID"></a>映射Faiss ID</h2><p>默认情况下，Faiss分配一组id序列给被添加的向量来建立索引。</p>
+<p>一些<strong>Index</strong>类会执行<strong>add_with_ids</strong>方法，该方法除了提供这些向量本身以外，还会提供64-bit的向量id。在搜索时，该类会返回存储好的id，而不是原始向量。</p>
+<h3 id="IndexIDMap"><a href="#IndexIDMap" class="headerlink" title="IndexIDMap"></a>IndexIDMap</h3><p>这个索引会将另一个索引封装在内部，并在添加和搜索时对id进行转化。该索引维护了一张映射表。</p>
+<p>举个例子：</p>
+<figure class="highlight makefile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">index = faiss.IndexFlatL2(xb.shape[1]) </span><br><span class="line">ids = np.arange(xb.shape[0])</span><br><span class="line">index.add_with_ids(xb, ids)  <span class="comment"># 这里会报错，因为IndexFlatL2不支持add_with_ids</span></span><br><span class="line">index2 = faiss.IndexIDMap(index)</span><br><span class="line">index2.add_with_ids(xb, ids) <span class="comment"># 这里可以正常运行，向量被存储在下一层的索引中</span></span><br></pre></td></tr></table></figure>
+<h3 id="IndexIVF中的ID"><a href="#IndexIVF中的ID" class="headerlink" title="IndexIVF中的ID"></a>IndexIVF中的ID</h3><p><strong>IndexIVF</strong>子类总是存储向量ID，因此<strong>IndexIDMap</strong>的额外的映射表是浪费空间的。<strong>IndexIVF</strong>天生就提供了<strong>add_with_ids</strong></p>
+<h2 id="预转换数据"><a href="#预转换数据" class="headerlink" title="预转换数据"></a>预转换数据</h2><p>该操作通常在转换数据比建立索引更优先的时候很有用。Transformation类继承<strong>VectorTransform</strong>。一个<strong>VectorTransform</strong>类对输入的<strong>d_in</strong>维向量应用转换方法，并输出大小为<strong>d_out</strong>的向量。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">转换方法</th>
+<th style="text-align:center">类名称</th>
+<th style="text-align:center">注释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">随机旋转</td>
+<td style="text-align:center"><strong>RandomRotationMatrix</strong></td>
+<td style="text-align:center">在建立<strong>IndexPQ</strong>或<strong>IndexLSH</strong>索引之前有助于重新平衡向量组成</td>
+<td></td>
+</tr>
+<tr>
+<td style="text-align:center">维度重映射</td>
+<td style="text-align:center"><strong>RemapDimensionsTransform</strong></td>
+<td style="text-align:center">当索引方式有要求的维度，或要对各种维度应用一个随机的排列方式时，减少或增加向量尺寸</td>
+<td></td>
+</tr>
+<tr>
+<td style="text-align:center">PCA</td>
+<td style="text-align:center"><strong>PCAMatrix</strong></td>
+<td style="text-align:center">用于降维</td>
+<td></td>
+</tr>
+<tr>
+<td style="text-align:center">OPQ旋转</td>
+<td style="text-align:center"><strong>OPQMatrix</strong></td>
+<td style="text-align:center">OPQ会对输入的向量进行旋转来使其在PQ编码时更合理。详情查看Optimized product quantization, Ge et al., CVPR’13</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>转换方法可以被一组向量训练，使用<strong>train</strong>方法，然后它们可以用<strong>apply</strong>方法来应用于另一组向量。</p>
+<p>一种索引可以被封装于<strong>IndexPreTransform</strong>索引中来使得映射显式地进行，并使训练过程和索引训练综合进行。</p>
+<h2 id="示例：使用PCA来降维"><a href="#示例：使用PCA来降维" class="headerlink" title="示例：使用PCA来降维"></a>示例：使用PCA来降维</h2><h3 id="配合IndexPreTransform"><a href="#配合IndexPreTransform" class="headerlink" title="配合IndexPreTransform"></a>配合IndexPreTransform</h3><p>如果输入向量是2048维的，且不得不减少到16 bytes，那么事先用PCA来降维就是合理的。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash"> IndexIVFPQ索引应该设定为256维，而不是2048维</span></span><br><span class="line"> coarse_quantizer = faiss.IndexFlatL2 (256)</span><br><span class="line"> sub_index = faiss.IndexIVFPQ (coarse_quantizer, 256, ncoarse, 16, 8)</span><br><span class="line"><span class="meta"> #</span><span class="bash"> PCA 2048-&gt;256</span></span><br><span class="line"><span class="meta"> #</span><span class="bash"> 在降维后进行了随机旋转(第四个参数)</span></span><br><span class="line"> pca_matrix = faiss.PCAMatrix (2048, 256, 0, True) </span><br><span class="line"></span><br><span class="line"><span class="meta"> #</span><span class="bash">- 封装索引</span></span><br><span class="line"> index = faiss.IndexPreTransform (pca_matrix, sub_index)</span><br><span class="line"></span><br><span class="line"><span class="meta"> #</span><span class="bash"> 也需要对PCA进行训练</span></span><br><span class="line"> index.train(...)</span><br><span class="line"><span class="meta"> #</span><span class="bash"> PCA要比添加操作更早执行</span></span><br><span class="line"> index.add(...)</span><br></pre></td></tr></table></figure>
+<h3 id="示例：升高维数"><a href="#示例：升高维数" class="headerlink" title="示例：升高维数"></a>示例：升高维数</h3><p>在往向量中插入0的时候，升高维数有时会很有用，这种方法对以下内容有帮助：</p>
+<ul>
+<li>让维数d增大4倍</li>
+<li>让维数d增大M倍</li>
+</ul>
+</div><div class="tags"><a href="/tags/Image-Retrieval/">Image Retrieval</a><a href="/tags/CV/">CV</a><a href="/tags/Deep-Learning/">Deep Learning</a><a href="/tags/FAISS/">FAISS</a></div><div class="post-nav"><a class="next" href="/2018/07/14/threads/">带有返回值的多线程Python实例</a></div></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><div class="search-form"><input id="local-search-input" placeholder="Search" type="text" name="q" results="0"/><div id="local-search-result"></div></div></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div><ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/Emotion/">Emotion</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/Notes/">Notes</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/Technology/">Technology</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/Python/" style="font-size: 15px;">Python</a> <a href="/tags/思维-语言-夏目漱石-木心-维度/" style="font-size: 15px;">思维 语言 夏目漱石 木心 维度</a> <a href="/tags/全连接层/" style="font-size: 15px;">全连接层</a> <a href="/tags/神经网络/" style="font-size: 15px;">神经网络</a> <a href="/tags/FPN/" style="font-size: 15px;">FPN</a> <a href="/tags/ROIalign/" style="font-size: 15px;">ROIalign</a> <a href="/tags/Image-Retrieval/" style="font-size: 15px;">Image Retrieval</a> <a href="/tags/卷积层/" style="font-size: 15px;">卷积层</a> <a href="/tags/multiprocessing/" style="font-size: 15px;">multiprocessing</a> <a href="/tags/Thread/" style="font-size: 15px;">Thread</a> <a href="/tags/脉络/" style="font-size: 15px;">脉络</a> <a href="/tags/CV/" style="font-size: 15px;">CV</a> <a href="/tags/Deep-Learning/" style="font-size: 15px;">Deep Learning</a> <a href="/tags/FAISS/" style="font-size: 15px;">FAISS</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2019/05/10/预处理与后期处理/">FAISS文档阅读（一）：预处理与后期处理</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/07/14/threads/">带有返回值的多线程Python实例</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/07/13/multiprocessing/">Multiprocessing实用技能总结</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/06/28/2018-6-28/">用FPN和ROIalign来进行图像检索</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/31/2018-5-31/">随笔：人类语言与神经网络类比</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/28/2018-5-28/">随笔：飞机上1</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/09/无题/">无题</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/05/07/论文阅读笔记：Faster R-CNN Features for Instance Search/">论文笔记：Faster R-CNN Features for Instance Search</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-external-link"> 友情链接</i></div><ul></ul><a href="https://github.com/674106399" title="My Github" target="_blank">My Github</a></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2019 <a href="/." rel="nofollow">镜子的掌纹.</a> Powered by<a rel="nofollow" target="_blank" href="https://hexo.io"> Hexo.</a><a rel="nofollow" target="_blank" href="https://github.com/tufu9441/maupassant-hexo"> Theme</a> by<a rel="nofollow" target="_blank" href="https://github.com/pagecho"> Cho.</a></div></div></div><a class="show" id="rocket" href="#top"></a><script type="text/javascript" src="/js/totop.js?v=0.0.0" async></script><script type="text/javascript" src="//cdn.bootcss.com/fancybox/3.3.5/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.0" async></script><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/fancybox/3.3.5/jquery.fancybox.min.css"><script type="text/javascript" src="/js/search.js?v=0.0.0"></script><script>var search_path = 'search.xml';
+if (search_path.length == 0) {
+   search_path = 'search.xml';
+}
+var path = '/' + search_path;
+searchFunc(path, 'local-search-input', 'local-search-result');
+</script><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.0"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.0"></script></div></body></html>
