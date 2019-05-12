@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <search>
   <entry>
-    <title></title>
+    <title><![CDATA[笔记：细粒度级别图像分析（一）：细粒度图像检索]]></title>
     <url>%2F2019%2F05%2F10%2F%E7%AC%94%E8%AE%B0%EF%BC%9A%E7%BB%86%E7%B2%92%E5%BA%A6%E7%BA%A7%E5%88%AB%E5%9B%BE%E5%83%8F%E5%88%86%E6%9E%90%2F</url>
-    <content type="text"><![CDATA[—title: 笔记：细粒度级别图像分析（一）：细粒度图像检索date: 2019-05-10 10:48:53tags: [CV,Image Retrieval,Fine-Grained Image Analysis]categories: Technology — 细粒度与粗粒度概念对比 粗粒度：类间appearance差异较大，如猫、鸟、鱼、飞机、汽车等 细粒度：类间差异较小，如不同品种的犬类之间，不同型号的飞机之间等 细粒度图像分类细粒度分类难点 apperance：类间差异较大（如猫和鸟），类内差异较小（如英短猫和美短猫） pose：类间差异可能较小（如不同品种，但相同姿态，相同视角布局），类内差异可能较大（如同一品种，但姿态、视角布局不同） 需要同时兼顾类间和类内差异造成的影响 细粒度图像分类关键找到分类对象的关键识别点 Method1: SCDA主要物体定位思路：用无监督的方法来定位主要物体，即用 pretrained 分类模型来获取特征图（如在 ImageNet 上训练的 VGG16） Notation Feature Map, Channel, Descriptor 从网络中间拿到的 h w d 的tensor可以看成 h * w 个 d 维的 向量 也可以看成 d 个 h * w 的 channel 每个 d 维向量也称为一个深度描述子（deep descriptor） Distributed Representation 每个 channel 会对物体不同部位进行响应，也有个别 channel 会对背景和噪声进行响应 Assumption： 绝大多数channel都会在主要物体上有所响应 因而很符合直觉地，我们可以从深度方向（d 方向）上对 channel 进行加和 一句话总结：对channel进行加和并设置阈值，过滤掉部分低响应区域，从而无监督地得到主要物体定位的 Mask Feature Aggregation由于背景和噪声会对检索造成负面影响，所以我们利用主要物体定位的 Mask把用于描述主要物体的 descriptor 筛选出来，然后进行特征聚合作为最终检索的特征向量 Notation VLAD, Fisher Vector, Pooling Approaches 特征聚合常用的三种方法，其中 VLAD 是一阶方法，FV 是二阶 经过实验对比，单纯的池化结果就比 VLAD 和 FV 更好 推测是因为深度特征本身就具有很高的非线性，再进行一阶或二阶的特征聚合会导致过拟合，反而使得结果劣化 我们将 avg pool 和 max pool 都结果进行级联后得到的特征称为 SCDA 后处理我们还可以对1024维的 SCDA 特征进行 Multi-layer ensumble，即提取网络不同深度的 tensor，以及图片水平翻转，进而得到 SCDA_flip 特征 笔者去 Github 上搜了一下 SCDA 的代码，找到一份 keras 版本的挺清晰的，贴在这里帮助加深理解 123456789101112131415161718192021222324252627282930def select_aggregate(feat_map, resize=None): A = tf.reduce_sum(feat_map, axis=-1, keepdims=True) a = tf.reduce_mean(A, axis=[1, 2], keepdims=True) M = tf.to_float(A&gt;a) if resize != None: M = tf.image.resize_images(M, resize) return Mdef scda_plus(map1, map2, alpha=1.0): _, h1, w1, _ = map1.shape M1 = select_aggregate(map1) M2 = select_aggregate(map2) S2 = map2 * M2 pavg2 = 1.0 / tf.reduce_sum(M2, axis=[1, 2]) * tf.reduce_sum(S2, axis=[1, 2]) # (b, d) pmax2 = tf.reduce_max(S2, axis=[1, 2]) # (b, d) S2 = tf.concat([pavg2, pmax2], axis=-1) # (b, 2d) # upsampling M2 = tf.image.resize_images(M2, [h1, w1], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR) S1 = map1 * (M1 * M2) pavg1 = 1.0 / tf.reduce_sum(M1, axis=[1, 2]) * tf.reduce_sum(S1, axis=[1, 2]) pmax1 = tf.reduce_max(S1, axis=[1, 2]) S1 = tf.concat([pavg1, pmax1], axis=-1) Splus = tf.concat([S2, S1*alpha], axis=-1) # (b, 4d) Splus = tf.nn.l2_normalize(Splus, 0) return Splus 结果分析 对4096维的 SCDA 特征进行 SVD+whitening 处理后性能还会有进一步的提升 Method2: DDTImage Co-localization利用一个包含有某个共同物体的数据集，来对数据集中所有该物体进行定位。不需要知道这个物体的位置监督信息，甚至不需要知道这个物体具体是什么。 DDT（Deep Descriptor Trasforming） 利用 pretrained 网络对数据集所有图片提取tensor（每个 h w d 的tensor 都由 h * w 个深度描述子组成） 由于已知该数据集包含有某个共同物体，那么我们只需要衡量这 N h w 个 descriptor 之间的相关程度就可以了 因而我们只需要找到一个 mapping function，来把所有的 descriptor 映射到一个新的空间进行比较，在这个新空间中强相关的 descriptor 就应该是整个数据集中共同包含的物体对象所对应的描述子 PCA 技术可以很简单地做到这一点：PCA 实际上就是把一组 n 维向量映射到一组全新的 k 维正交向量上，所以我们可以把这些 d 维的深度描述子利用 PCA 降到1维，即只保留共同相关度最强的一个维度，在这个维度上的值就可以看做是该 descriptor 跟目标物体的相关程度 因此，我们可以利用这个构建好的 PCA 来将每张图片的 tensor，转化为一个 h * w 的矩阵 利用该方法，我们也可以轻松地找出数据集中一些噪声 笔者感觉 DDT 方法比 SCDA 更容易理解，Github 上也只搜到一个 caffe 版本的代码，就不贴出来了。个人感觉 DDT 的贡献主要是在定位方面，特征聚合和增强的方法仍可以参考 SCDA 的代码。 SCDA vs. DDT 通过对比可以发现，由于 SCDA 是基于单张图片的，所以很容易把一些与对象无关的内容也定位进去，而 DDT 由于得到了数据集中其他图片信息的协同定位，能更准确地定位对应的物体对象 DDT 的另一个优势在于省去了 SCDA 方法中的动态阈值计算，只需要以0来作为阈值 Benchmark 泛化性将不同无监督方法在6个 ImageNet 没有的类别数据上进行实验对比 DDT 方法的扩展[Collins et al., ECCV 2018] 对 tensor 进行NMF（非负矩阵分解）可以把物体的 key part 定位出来（如清真寺的穹顶，房屋主体等） 内容来源：旷视科技南京研究院负责人魏秀参：细粒度级别图像分析领域的现状与展望]]></content>
+    <content type="text"><![CDATA[细粒度与粗粒度概念对比 粗粒度：类间appearance差异较大，如猫、鸟、鱼、飞机、汽车等 细粒度：类间差异较小，如不同品种的犬类之间，不同型号的飞机之间等 细粒度图像分类细粒度分类难点 apperance：类间差异较大（如猫和鸟），类内差异较小（如英短猫和美短猫） pose：类间差异可能较小（如不同品种，但相同姿态，相同视角布局），类内差异可能较大（如同一品种，但姿态、视角布局不同） 需要同时兼顾类间和类内差异造成的影响 细粒度图像分类关键找到分类对象的关键识别点 Method1: SCDA主要物体定位思路：用无监督的方法来定位主要物体，即用 pretrained 分类模型来获取特征图（如在 ImageNet 上训练的 VGG16） Notation Feature Map, Channel, Descriptor 从网络中间拿到的 h w d 的tensor可以看成 h * w 个 d 维的 向量 也可以看成 d 个 h * w 的 channel 每个 d 维向量也称为一个深度描述子（deep descriptor） Distributed Representation 每个 channel 会对物体不同部位进行响应，也有个别 channel 会对背景和噪声进行响应 Assumption： 绝大多数channel都会在主要物体上有所响应 因而很符合直觉地，我们可以从深度方向（d 方向）上对 channel 进行加和 一句话总结：对channel进行加和并设置阈值，过滤掉部分低响应区域，从而无监督地得到主要物体定位的 Mask Feature Aggregation由于背景和噪声会对检索造成负面影响，所以我们利用主要物体定位的 Mask把用于描述主要物体的 descriptor 筛选出来，然后进行特征聚合作为最终检索的特征向量 Notation VLAD, Fisher Vector, Pooling Approaches 特征聚合常用的三种方法，其中 VLAD 是一阶方法，FV 是二阶 经过实验对比，单纯的池化结果就比 VLAD 和 FV 更好 推测是因为深度特征本身就具有很高的非线性，再进行一阶或二阶的特征聚合会导致过拟合，反而使得结果劣化 我们将 avg pool 和 max pool 都结果进行级联后得到的特征称为 SCDA 后处理我们还可以对1024维的 SCDA 特征进行 Multi-layer ensumble，即提取网络不同深度的 tensor，以及图片水平翻转，进而得到 SCDA_flip 特征 笔者去 Github 上搜了一下 SCDA 的代码，找到一份 keras 版本的挺清晰的，贴在这里帮助加深理解 123456789101112131415161718192021222324252627282930def select_aggregate(feat_map, resize=None): A = tf.reduce_sum(feat_map, axis=-1, keepdims=True) a = tf.reduce_mean(A, axis=[1, 2], keepdims=True) M = tf.to_float(A&gt;a) if resize != None: M = tf.image.resize_images(M, resize) return Mdef scda_plus(map1, map2, alpha=1.0): _, h1, w1, _ = map1.shape M1 = select_aggregate(map1) M2 = select_aggregate(map2) S2 = map2 * M2 pavg2 = 1.0 / tf.reduce_sum(M2, axis=[1, 2]) * tf.reduce_sum(S2, axis=[1, 2]) # (b, d) pmax2 = tf.reduce_max(S2, axis=[1, 2]) # (b, d) S2 = tf.concat([pavg2, pmax2], axis=-1) # (b, 2d) # upsampling M2 = tf.image.resize_images(M2, [h1, w1], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR) S1 = map1 * (M1 * M2) pavg1 = 1.0 / tf.reduce_sum(M1, axis=[1, 2]) * tf.reduce_sum(S1, axis=[1, 2]) pmax1 = tf.reduce_max(S1, axis=[1, 2]) S1 = tf.concat([pavg1, pmax1], axis=-1) Splus = tf.concat([S2, S1*alpha], axis=-1) # (b, 4d) Splus = tf.nn.l2_normalize(Splus, 0) return Splus 结果分析 对4096维的 SCDA 特征进行 SVD+whitening 处理后性能还会有进一步的提升 Method2: DDTImage Co-localization利用一个包含有某个共同物体的数据集，来对数据集中所有该物体进行定位。不需要知道这个物体的位置监督信息，甚至不需要知道这个物体具体是什么。 DDT（Deep Descriptor Trasforming） 利用 pretrained 网络对数据集所有图片提取tensor（每个 h w d 的tensor 都由 h * w 个深度描述子组成） 由于已知该数据集包含有某个共同物体，那么我们只需要衡量这 N h w 个 descriptor 之间的相关程度就可以了 因而我们只需要找到一个 mapping function，来把所有的 descriptor 映射到一个新的空间进行比较，在这个新空间中强相关的 descriptor 就应该是整个数据集中共同包含的物体对象所对应的描述子 PCA 技术可以很简单地做到这一点：PCA 实际上就是把一组 n 维向量映射到一组全新的 k 维正交向量上，所以我们可以把这些 d 维的深度描述子利用 PCA 降到1维，即只保留共同相关度最强的一个维度，在这个维度上的值就可以看做是该 descriptor 跟目标物体的相关程度 因此，我们可以利用这个构建好的 PCA 来将每张图片的 tensor，转化为一个 h * w 的矩阵 利用该方法，我们也可以轻松地找出数据集中一些噪声 笔者感觉 DDT 方法比 SCDA 更容易理解，Github 上也只搜到一个 caffe 版本的代码，就不贴出来了。个人感觉 DDT 的贡献主要是在定位方面，特征聚合和增强的方法仍可以参考 SCDA 的代码。 SCDA vs. DDT 通过对比可以发现，由于 SCDA 是基于单张图片的，所以很容易把一些与对象无关的内容也定位进去，而 DDT 由于得到了数据集中其他图片信息的协同定位，能更准确地定位对应的物体对象 DDT 的另一个优势在于省去了 SCDA 方法中的动态阈值计算，只需要以0来作为阈值 Benchmark 泛化性将不同无监督方法在6个 ImageNet 没有的类别数据上进行实验对比 DDT 方法的扩展[Collins et al., ECCV 2018] 对 tensor 进行NMF（非负矩阵分解）可以把物体的 key part 定位出来（如清真寺的穹顶，房屋主体等） 内容来源：旷视科技南京研究院负责人魏秀参：细粒度级别图像分析领域的现状与展望]]></content>
+      <categories>
+        <category>Technology</category>
+      </categories>
+      <tags>
+        <tag>CV</tag>
+        <tag>Image Retrieval</tag>
+        <tag>Fine-Grained Image Analysis</tag>
+      </tags>
   </entry>
   <entry>
     <title><![CDATA[FAISS文档阅读（一）：预处理与后期处理]]></title>
@@ -13,8 +21,8 @@
         <category>Technology</category>
       </categories>
       <tags>
-        <tag>Image Retrieval</tag>
         <tag>CV</tag>
+        <tag>Image Retrieval</tag>
         <tag>Deep Learning</tag>
         <tag>FAISS</tag>
       </tags>
@@ -51,9 +59,9 @@
         <category>Technology</category>
       </categories>
       <tags>
+        <tag>Image Retrieval</tag>
         <tag>FPN</tag>
         <tag>ROIalign</tag>
-        <tag>Image Retrieval</tag>
       </tags>
   </entry>
   <entry>
@@ -99,8 +107,8 @@
         <category>Technology</category>
       </categories>
       <tags>
-        <tag>Image Retrieval</tag>
         <tag>CV</tag>
+        <tag>Image Retrieval</tag>
         <tag>Deep Learning</tag>
       </tags>
   </entry>
