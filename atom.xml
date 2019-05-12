@@ -37,9 +37,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
-    
       <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
+    
+      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
     
       <category term="Fine-Grained Image Analysis" scheme="http://yoursite.com/tags/Fine-Grained-Image-Analysis/"/>
     
@@ -66,9 +66,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
-    
       <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
+    
+      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
     
       <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
     
@@ -152,11 +152,11 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
-    
       <category term="FPN" scheme="http://yoursite.com/tags/FPN/"/>
     
       <category term="ROIalign" scheme="http://yoursite.com/tags/ROIalign/"/>
+    
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
   </entry>
   
@@ -270,9 +270,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
-    
       <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
+    
+      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
     
       <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
     

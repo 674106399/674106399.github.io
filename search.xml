@@ -1,115 +1,222 @@
 <?xml version="1.0" encoding="utf-8"?>
-<search>
-  <entry>
-    <title><![CDATA[笔记：细粒度级别图像分析（一）：细粒度图像检索]]></title>
-    <url>%2F2019%2F05%2F10%2F%E7%AC%94%E8%AE%B0%EF%BC%9A%E7%BB%86%E7%B2%92%E5%BA%A6%E7%BA%A7%E5%88%AB%E5%9B%BE%E5%83%8F%E5%88%86%E6%9E%90%2F</url>
-    <content type="text"><![CDATA[细粒度与粗粒度概念对比 粗粒度：类间appearance差异较大，如猫、鸟、鱼、飞机、汽车等 细粒度：类间差异较小，如不同品种的犬类之间，不同型号的飞机之间等 细粒度图像分类细粒度分类难点 apperance：类间差异较大（如猫和鸟），类内差异较小（如英短猫和美短猫） pose：类间差异可能较小（如不同品种，但相同姿态，相同视角布局），类内差异可能较大（如同一品种，但姿态、视角布局不同） 需要同时兼顾类间和类内差异造成的影响 细粒度图像分类关键找到分类对象的关键识别点 Method1: SCDA主要物体定位思路：用无监督的方法来定位主要物体，即用 pretrained 分类模型来获取特征图（如在 ImageNet 上训练的 VGG16） Notation Feature Map, Channel, Descriptor 从网络中间拿到的 h w d 的tensor可以看成 h * w 个 d 维的 向量 也可以看成 d 个 h * w 的 channel 每个 d 维向量也称为一个深度描述子（deep descriptor） Distributed Representation 每个 channel 会对物体不同部位进行响应，也有个别 channel 会对背景和噪声进行响应 Assumption： 绝大多数channel都会在主要物体上有所响应 因而很符合直觉地，我们可以从深度方向（d 方向）上对 channel 进行加和 一句话总结：对channel进行加和并设置阈值，过滤掉部分低响应区域，从而无监督地得到主要物体定位的 Mask Feature Aggregation由于背景和噪声会对检索造成负面影响，所以我们利用主要物体定位的 Mask把用于描述主要物体的 descriptor 筛选出来，然后进行特征聚合作为最终检索的特征向量 Notation VLAD, Fisher Vector, Pooling Approaches 特征聚合常用的三种方法，其中 VLAD 是一阶方法，FV 是二阶 经过实验对比，单纯的池化结果就比 VLAD 和 FV 更好 推测是因为深度特征本身就具有很高的非线性，再进行一阶或二阶的特征聚合会导致过拟合，反而使得结果劣化 我们将 avg pool 和 max pool 都结果进行级联后得到的特征称为 SCDA 后处理我们还可以对1024维的 SCDA 特征进行 Multi-layer ensumble，即提取网络不同深度的 tensor，以及图片水平翻转，进而得到 SCDA_flip 特征 笔者去 Github 上搜了一下 SCDA 的代码，找到一份 keras 版本的挺清晰的，贴在这里帮助加深理解 123456789101112131415161718192021222324252627282930def select_aggregate(feat_map, resize=None): A = tf.reduce_sum(feat_map, axis=-1, keepdims=True) a = tf.reduce_mean(A, axis=[1, 2], keepdims=True) M = tf.to_float(A&gt;a) if resize != None: M = tf.image.resize_images(M, resize) return Mdef scda_plus(map1, map2, alpha=1.0): _, h1, w1, _ = map1.shape M1 = select_aggregate(map1) M2 = select_aggregate(map2) S2 = map2 * M2 pavg2 = 1.0 / tf.reduce_sum(M2, axis=[1, 2]) * tf.reduce_sum(S2, axis=[1, 2]) # (b, d) pmax2 = tf.reduce_max(S2, axis=[1, 2]) # (b, d) S2 = tf.concat([pavg2, pmax2], axis=-1) # (b, 2d) # upsampling M2 = tf.image.resize_images(M2, [h1, w1], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR) S1 = map1 * (M1 * M2) pavg1 = 1.0 / tf.reduce_sum(M1, axis=[1, 2]) * tf.reduce_sum(S1, axis=[1, 2]) pmax1 = tf.reduce_max(S1, axis=[1, 2]) S1 = tf.concat([pavg1, pmax1], axis=-1) Splus = tf.concat([S2, S1*alpha], axis=-1) # (b, 4d) Splus = tf.nn.l2_normalize(Splus, 0) return Splus 结果分析 对4096维的 SCDA 特征进行 SVD+whitening 处理后性能还会有进一步的提升 Method2: DDTImage Co-localization利用一个包含有某个共同物体的数据集，来对数据集中所有该物体进行定位。不需要知道这个物体的位置监督信息，甚至不需要知道这个物体具体是什么。 DDT（Deep Descriptor Trasforming） 利用 pretrained 网络对数据集所有图片提取tensor（每个 h w d 的tensor 都由 h * w 个深度描述子组成） 由于已知该数据集包含有某个共同物体，那么我们只需要衡量这 N h w 个 descriptor 之间的相关程度就可以了 因而我们只需要找到一个 mapping function，来把所有的 descriptor 映射到一个新的空间进行比较，在这个新空间中强相关的 descriptor 就应该是整个数据集中共同包含的物体对象所对应的描述子 PCA 技术可以很简单地做到这一点：PCA 实际上就是把一组 n 维向量映射到一组全新的 k 维正交向量上，所以我们可以把这些 d 维的深度描述子利用 PCA 降到1维，即只保留共同相关度最强的一个维度，在这个维度上的值就可以看做是该 descriptor 跟目标物体的相关程度 因此，我们可以利用这个构建好的 PCA 来将每张图片的 tensor，转化为一个 h * w 的矩阵 利用该方法，我们也可以轻松地找出数据集中一些噪声 笔者感觉 DDT 方法比 SCDA 更容易理解，Github 上也只搜到一个 caffe 版本的代码，就不贴出来了。个人感觉 DDT 的贡献主要是在定位方面，特征聚合和增强的方法仍可以参考 SCDA 的代码。 SCDA vs. DDT 通过对比可以发现，由于 SCDA 是基于单张图片的，所以很容易把一些与对象无关的内容也定位进去，而 DDT 由于得到了数据集中其他图片信息的协同定位，能更准确地定位对应的物体对象 DDT 的另一个优势在于省去了 SCDA 方法中的动态阈值计算，只需要以0来作为阈值 Benchmark 泛化性将不同无监督方法在6个 ImageNet 没有的类别数据上进行实验对比 DDT 方法的扩展[Collins et al., ECCV 2018] 对 tensor 进行NMF（非负矩阵分解）可以把物体的 key part 定位出来（如清真寺的穹顶，房屋主体等） 内容来源：旷视科技南京研究院负责人魏秀参：细粒度级别图像分析领域的现状与展望]]></content>
+<search> 
+  
+    
+    <entry>
+      <title>笔记：细粒度级别图像分析（一）：细粒度图像检索</title>
+      <link href="/2019/05/10/%E7%AC%94%E8%AE%B0%EF%BC%9A%E7%BB%86%E7%B2%92%E5%BA%A6%E7%BA%A7%E5%88%AB%E5%9B%BE%E5%83%8F%E5%88%86%E6%9E%90/"/>
+      <url>/2019/05/10/%E7%AC%94%E8%AE%B0%EF%BC%9A%E7%BB%86%E7%B2%92%E5%BA%A6%E7%BA%A7%E5%88%AB%E5%9B%BE%E5%83%8F%E5%88%86%E6%9E%90/</url>
+      <content type="html"><![CDATA[<h1 id="细粒度与粗粒度概念对比"><a href="#细粒度与粗粒度概念对比" class="headerlink" title="细粒度与粗粒度概念对比"></a>细粒度与粗粒度概念对比</h1><p><img src="/Users/billow/Desktop/1.png" alt=""></p><ul><li><p><strong>粗粒度</strong>：类间appearance差异较大，如猫、鸟、鱼、飞机、汽车等</p></li><li><p><strong>细粒度</strong>：类间差异较小，如不同品种的犬类之间，不同型号的飞机之间等</p></li></ul><h1 id="细粒度图像分类"><a href="#细粒度图像分类" class="headerlink" title="细粒度图像分类"></a>细粒度图像分类</h1><h2 id="细粒度分类难点"><a href="#细粒度分类难点" class="headerlink" title="细粒度分类难点"></a>细粒度分类难点</h2><ul><li><strong>apperance</strong>：类间差异较大（如猫和鸟），类内差异较小（如英短猫和美短猫）</li><li><strong>pose</strong>：类间差异可能较小（如不同品种，但相同姿态，相同视角布局），类内差异可能较大（如同一品种，但姿态、视角布局不同）</li></ul><p>需要同时兼顾类间和类内差异造成的影响</p><h2 id="细粒度图像分类关键"><a href="#细粒度图像分类关键" class="headerlink" title="细粒度图像分类关键"></a>细粒度图像分类关键</h2><p><img src="/Users/billow/Desktop/2.png" alt=""><br>找到分类对象的关键识别点</p><h2 id="Method1-SCDA"><a href="#Method1-SCDA" class="headerlink" title="Method1: SCDA"></a>Method1: SCDA</h2><h3 id="主要物体定位"><a href="#主要物体定位" class="headerlink" title="主要物体定位"></a>主要物体定位</h3><p>思路：用无监督的方法来定位主要物体，即用 pretrained 分类模型来获取特征图（如在 ImageNet 上训练的 VGG16）</p><blockquote><p>Notation</p><p><strong>Feature Map, Channel, Descriptor</strong></p><p><img src="/Users/billow/Desktop/3.png" alt=""><br>从网络中间拿到的 h <em> w </em> d 的tensor可以看成 h * w 个 d 维的 向量</p><p>也可以看成 d 个 h * w 的 channel</p><p>每个 d 维向量也称为一个深度描述子（deep descriptor）</p><p><strong>Distributed Representation</strong></p><p><img src="/Users/billow/Desktop/4.png" alt=""></p><p>每个 channel 会对物体不同部位进行响应，也有个别 channel 会对背景和噪声进行响应</p><p>Assumption：</p><p>绝大多数channel都会在主要物体上有所响应</p><p>因而很符合直觉地，我们可以从深度方向（d 方向）上对 channel 进行加和</p></blockquote><p><strong>一句话总结：对channel进行加和并设置阈值，过滤掉部分低响应区域，从而无监督地得到主要物体定位的 Mask</strong></p><p><img src="/Users/billow/Desktop/13.png" alt=""></p><h3 id="Feature-Aggregation"><a href="#Feature-Aggregation" class="headerlink" title="Feature Aggregation"></a>Feature Aggregation</h3><p>由于背景和噪声会对检索造成负面影响，所以我们利用主要物体定位的 Mask把用于描述主要物体的 descriptor 筛选出来，然后进行特征聚合作为最终检索的特征向量</p><blockquote><p>Notation</p><p><strong>VLAD, Fisher Vector, Pooling Approaches</strong></p><p>特征聚合常用的三种方法，其中 VLAD 是一阶方法，FV 是二阶</p><p><img src="/Users/billow/Desktop/5.png" alt=""></p><p>经过实验对比，单纯的池化结果就比 VLAD 和 FV 更好</p><p>推测是因为深度特征本身就具有很高的非线性，再进行一阶或二阶的特征聚合会导致过拟合，反而使得结果劣化</p></blockquote><p>我们将 avg pool 和 max pool 都结果进行级联后得到的特征称为 SCDA</p><h3 id="后处理"><a href="#后处理" class="headerlink" title="后处理"></a>后处理</h3><p>我们还可以对1024维的 SCDA 特征进行 Multi-layer ensumble，即提取网络不同深度的 tensor，以及图片水平翻转，进而得到 SCDA_flip 特征</p><blockquote><p>笔者去 Github 上搜了一下 SCDA 的代码，找到一份 keras 版本的挺清晰的，贴在这里帮助加深理解</p></blockquote><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">def select_aggregate(feat_map, resize=None):</span><br><span class="line">    A = tf.reduce_sum(feat_map, axis=-1, keepdims=True)</span><br><span class="line">    a = tf.reduce_mean(A, axis=[1, 2], keepdims=True)</span><br><span class="line">    M = tf.to_float(A&gt;a)</span><br><span class="line">    if resize != None:</span><br><span class="line">        M = tf.image.resize_images(M, resize)</span><br><span class="line">    return M</span><br><span class="line"></span><br><span class="line">def scda_plus(map1, map2, alpha=1.0):</span><br><span class="line">    _, h1, w1, _ = map1.shape</span><br><span class="line">    </span><br><span class="line">    M1 = select_aggregate(map1)</span><br><span class="line">    M2 = select_aggregate(map2)</span><br><span class="line"></span><br><span class="line">    S2 = map2 * M2</span><br><span class="line">    pavg2 = 1.0 / tf.reduce_sum(M2, axis=[1, 2]) * tf.reduce_sum(S2, axis=[1, 2]) # (b, d)</span><br><span class="line">    pmax2 = tf.reduce_max(S2, axis=[1, 2]) # (b, d)</span><br><span class="line">    S2 = tf.concat([pavg2, pmax2], axis=-1) # (b, 2d)</span><br><span class="line"></span><br><span class="line">    # upsampling</span><br><span class="line">    M2 = tf.image.resize_images(M2, [h1, w1], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)</span><br><span class="line">    S1 = map1 * (M1 * M2)</span><br><span class="line">    pavg1 = 1.0 / tf.reduce_sum(M1, axis=[1, 2]) * tf.reduce_sum(S1, axis=[1, 2])</span><br><span class="line">    pmax1 = tf.reduce_max(S1, axis=[1, 2]) </span><br><span class="line">    S1 = tf.concat([pavg1, pmax1], axis=-1)</span><br><span class="line"></span><br><span class="line">    Splus = tf.concat([S2, S1*alpha], axis=-1) # (b, 4d)</span><br><span class="line">    Splus = tf.nn.l2_normalize(Splus, 0)</span><br><span class="line"></span><br><span class="line">    return Splus</span><br></pre></td></tr></table></figure><h3 id="结果分析"><a href="#结果分析" class="headerlink" title="结果分析"></a>结果分析</h3><p><img src="/Users/billow/Desktop/12.png" alt=""></p><p>对4096维的 SCDA 特征进行 SVD+whitening 处理后性能还会有进一步的提升</p><h2 id="Method2-DDT"><a href="#Method2-DDT" class="headerlink" title="Method2: DDT"></a>Method2: DDT</h2><h3 id="Image-Co-localization"><a href="#Image-Co-localization" class="headerlink" title="Image Co-localization"></a>Image Co-localization</h3><p>利用一个包含有某个共同物体的数据集，来对数据集中所有该物体进行定位。不需要知道这个物体的位置监督信息，甚至不需要知道这个物体具体是什么。</p><h3 id="DDT（Deep-Descriptor-Trasforming）"><a href="#DDT（Deep-Descriptor-Trasforming）" class="headerlink" title="DDT（Deep Descriptor Trasforming）"></a>DDT（Deep Descriptor Trasforming）</h3><p><img src="/Users/billow/Desktop/6.png" alt=""></p><p>利用 pretrained 网络对数据集所有图片提取tensor（每个 h <em> w </em> d 的tensor 都由 h * w 个深度描述子组成）</p><p>由于已知该数据集包含有某个共同物体，那么我们只需要衡量这 N <em> h </em> w 个 descriptor 之间的相关程度就可以了</p><p>因而我们只需要找到一个 mapping function，来把所有的 descriptor 映射到一个新的空间进行比较，在这个新空间中强相关的 descriptor 就应该是整个数据集中共同包含的物体对象所对应的描述子</p><p>PCA 技术可以很简单地做到这一点：PCA 实际上就是把一组 n 维向量映射到一组全新的 k 维正交向量上，所以我们可以把这些 d 维的深度描述子利用 PCA 降到1维，即只保留<strong>共同</strong>相关度最强的一个维度，<strong>在这个维度上的值就可以看做是该 descriptor 跟目标物体的相关程度</strong></p><p>因此，我们可以利用这个构建好的 PCA 来将每张图片的 tensor，转化为一个 h * w 的矩阵</p><p><img src="/Users/billow/Desktop/8.png" alt=""></p><p>利用该方法，我们也可以轻松地找出数据集中一些噪声</p><blockquote><p>笔者感觉 DDT 方法比 SCDA 更容易理解，Github 上也只搜到一个 caffe 版本的代码，就不贴出来了。个人感觉 DDT 的贡献主要是在定位方面，特征聚合和增强的方法仍可以参考 SCDA 的代码。</p></blockquote><h2 id="SCDA-vs-DDT"><a href="#SCDA-vs-DDT" class="headerlink" title="SCDA vs. DDT"></a>SCDA vs. DDT</h2><p><img src="/Users/billow/Desktop/7.png" alt=""></p><p>通过对比可以发现，由于 SCDA 是基于单张图片的，所以很容易把一些与对象无关的内容也定位进去，而 DDT 由于得到了数据集中其他图片信息的协同定位，能更准确地定位对应的物体对象</p><p>DDT 的另一个优势在于省去了 SCDA 方法中的动态阈值计算，只需要以0来作为阈值</p><h3 id="Benchmark"><a href="#Benchmark" class="headerlink" title="Benchmark"></a>Benchmark</h3><p><img src="/Users/billow/Desktop/9.png" alt=""></p><h3 id="泛化性"><a href="#泛化性" class="headerlink" title="泛化性"></a>泛化性</h3><p>将不同无监督方法在6个 ImageNet 没有的类别数据上进行实验对比<br><img src="/Users/billow/Desktop/10.png" alt=""></p><h2 id="DDT-方法的扩展"><a href="#DDT-方法的扩展" class="headerlink" title="DDT 方法的扩展"></a>DDT 方法的扩展</h2><p><img src="/Users/billow/Desktop/11.png" alt=""><br>[Collins et al., ECCV 2018]</p><p>对 tensor 进行NMF（非负矩阵分解）可以把物体的 key part 定位出来（如清真寺的穹顶，房屋主体等）</p><h2 id="内容来源："><a href="#内容来源：" class="headerlink" title="内容来源："></a>内容来源：</h2><p><a href="https://www.bilibili.com/video/av43499197/" target="_blank" rel="noopener">旷视科技南京研究院负责人魏秀参：细粒度级别图像分析领域的现状与展望</a></p>]]></content>
+      
       <categories>
-        <category>Technology</category>
+          
+          <category> Technology </category>
+          
       </categories>
-      <tags>
-        <tag>CV</tag>
-        <tag>Image Retrieval</tag>
-        <tag>Fine-Grained Image Analysis</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[FAISS文档阅读（一）：预处理与后期处理]]></title>
-    <url>%2F2019%2F05%2F10%2F%E9%A2%84%E5%A4%84%E7%90%86%E4%B8%8E%E5%90%8E%E6%9C%9F%E5%A4%84%E7%90%86%2F</url>
-    <content type="text"><![CDATA[预处理与后期处理预处理与后期处理用于重映射向量和id，把转换处理(transformations)应用到数据，然后用更好的索引来对搜索结果进行重新排序 映射Faiss ID默认情况下，Faiss分配一组id序列给被添加的向量来建立索引。 一些Index类会执行add_with_ids方法，该方法除了提供这些向量本身以外，还会提供64-bit的向量id。在搜索时，该类会返回存储好的id，而不是原始向量。 IndexIDMap这个索引会将另一个索引封装在内部，并在添加和搜索时对id进行转化。该索引维护了一张映射表。 举个例子： 12345index = faiss.IndexFlatL2(xb.shape[1]) ids = np.arange(xb.shape[0])index.add_with_ids(xb, ids) # 这里会报错，因为IndexFlatL2不支持add_with_idsindex2 = faiss.IndexIDMap(index)index2.add_with_ids(xb, ids) # 这里可以正常运行，向量被存储在下一层的索引中 IndexIVF中的IDIndexIVF子类总是存储向量ID，因此IndexIDMap的额外的映射表是浪费空间的。IndexIVF天生就提供了add_with_ids 预转换数据该操作通常在转换数据比建立索引更优先的时候很有用。Transformation类继承VectorTransform。一个VectorTransform类对输入的d_in维向量应用转换方法，并输出大小为d_out的向量。 转换方法 类名称 注释 随机旋转 RandomRotationMatrix 在建立IndexPQ或IndexLSH索引之前有助于重新平衡向量组成 维度重映射 RemapDimensionsTransform 当索引方式有要求的维度，或要对各种维度应用一个随机的排列方式时，减少或增加向量尺寸 PCA PCAMatrix 用于降维 OPQ旋转 OPQMatrix OPQ会对输入的向量进行旋转来使其在PQ编码时更合理。详情查看Optimized product quantization, Ge et al., CVPR’13 转换方法可以被一组向量训练，使用train方法，然后它们可以用apply方法来应用于另一组向量。 一种索引可以被封装于IndexPreTransform索引中来使得映射显式地进行，并使训练过程和索引训练综合进行。 示例：使用PCA来降维配合IndexPreTransform如果输入向量是2048维的，且不得不减少到16 bytes，那么事先用PCA来降维就是合理的。 1234567891011121314# IndexIVFPQ索引应该设定为256维，而不是2048维 coarse_quantizer = faiss.IndexFlatL2 (256) sub_index = faiss.IndexIVFPQ (coarse_quantizer, 256, ncoarse, 16, 8) # PCA 2048-&gt;256 # 在降维后进行了随机旋转(第四个参数) pca_matrix = faiss.PCAMatrix (2048, 256, 0, True) #- 封装索引 index = faiss.IndexPreTransform (pca_matrix, sub_index) # 也需要对PCA进行训练 index.train(...) # PCA要比添加操作更早执行 index.add(...) 示例：升高维数在往向量中插入0的时候，升高维数有时会很有用，这种方法对以下内容有帮助： 让维数d增大4倍 让维数d增大M倍]]></content>
+      
+      
+        <tags>
+            
+            <tag> Image Retrieval </tag>
+            
+            <tag> CV </tag>
+            
+            <tag> Fine-Grained Image Analysis </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>FAISS文档阅读（一）：预处理与后期处理</title>
+      <link href="/2019/05/10/%E9%A2%84%E5%A4%84%E7%90%86%E4%B8%8E%E5%90%8E%E6%9C%9F%E5%A4%84%E7%90%86/"/>
+      <url>/2019/05/10/%E9%A2%84%E5%A4%84%E7%90%86%E4%B8%8E%E5%90%8E%E6%9C%9F%E5%A4%84%E7%90%86/</url>
+      <content type="html"><![CDATA[<h1 id="预处理与后期处理"><a href="#预处理与后期处理" class="headerlink" title="预处理与后期处理"></a>预处理与后期处理</h1><p>预处理与后期处理用于重映射向量和id，把转换处理(transformations)应用到数据，然后用更好的索引来对搜索结果进行重新排序</p><h2 id="映射Faiss-ID"><a href="#映射Faiss-ID" class="headerlink" title="映射Faiss ID"></a>映射Faiss ID</h2><p>默认情况下，Faiss分配一组id序列给被添加的向量来建立索引。</p><p>一些<strong>Index</strong>类会执行<strong>add_with_ids</strong>方法，该方法除了提供这些向量本身以外，还会提供64-bit的向量id。在搜索时，该类会返回存储好的id，而不是原始向量。</p><h3 id="IndexIDMap"><a href="#IndexIDMap" class="headerlink" title="IndexIDMap"></a>IndexIDMap</h3><p>这个索引会将另一个索引封装在内部，并在添加和搜索时对id进行转化。该索引维护了一张映射表。</p><p>举个例子：</p><figure class="highlight makefile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">index = faiss.IndexFlatL2(xb.shape[1]) </span><br><span class="line">ids = np.arange(xb.shape[0])</span><br><span class="line">index.add_with_ids(xb, ids)  <span class="comment"># 这里会报错，因为IndexFlatL2不支持add_with_ids</span></span><br><span class="line">index2 = faiss.IndexIDMap(index)</span><br><span class="line">index2.add_with_ids(xb, ids) <span class="comment"># 这里可以正常运行，向量被存储在下一层的索引中</span></span><br></pre></td></tr></table></figure><h3 id="IndexIVF中的ID"><a href="#IndexIVF中的ID" class="headerlink" title="IndexIVF中的ID"></a>IndexIVF中的ID</h3><p><strong>IndexIVF</strong>子类总是存储向量ID，因此<strong>IndexIDMap</strong>的额外的映射表是浪费空间的。<strong>IndexIVF</strong>天生就提供了<strong>add_with_ids</strong></p><h2 id="预转换数据"><a href="#预转换数据" class="headerlink" title="预转换数据"></a>预转换数据</h2><p>该操作通常在转换数据比建立索引更优先的时候很有用。Transformation类继承<strong>VectorTransform</strong>。一个<strong>VectorTransform</strong>类对输入的<strong>d_in</strong>维向量应用转换方法，并输出大小为<strong>d_out</strong>的向量。</p><table><thead><tr><th style="text-align:center">转换方法</th><th style="text-align:center">类名称</th><th style="text-align:center">注释</th></tr></thead><tbody><tr><td style="text-align:center">随机旋转</td><td style="text-align:center"><strong>RandomRotationMatrix</strong></td><td style="text-align:center">在建立<strong>IndexPQ</strong>或<strong>IndexLSH</strong>索引之前有助于重新平衡向量组成</td><td></td></tr><tr><td style="text-align:center">维度重映射</td><td style="text-align:center"><strong>RemapDimensionsTransform</strong></td><td style="text-align:center">当索引方式有要求的维度，或要对各种维度应用一个随机的排列方式时，减少或增加向量尺寸</td><td></td></tr><tr><td style="text-align:center">PCA</td><td style="text-align:center"><strong>PCAMatrix</strong></td><td style="text-align:center">用于降维</td><td></td></tr><tr><td style="text-align:center">OPQ旋转</td><td style="text-align:center"><strong>OPQMatrix</strong></td><td style="text-align:center">OPQ会对输入的向量进行旋转来使其在PQ编码时更合理。详情查看Optimized product quantization, Ge et al., CVPR’13</td><td></td></tr></tbody></table><p>转换方法可以被一组向量训练，使用<strong>train</strong>方法，然后它们可以用<strong>apply</strong>方法来应用于另一组向量。</p><p>一种索引可以被封装于<strong>IndexPreTransform</strong>索引中来使得映射显式地进行，并使训练过程和索引训练综合进行。</p><h2 id="示例：使用PCA来降维"><a href="#示例：使用PCA来降维" class="headerlink" title="示例：使用PCA来降维"></a>示例：使用PCA来降维</h2><h3 id="配合IndexPreTransform"><a href="#配合IndexPreTransform" class="headerlink" title="配合IndexPreTransform"></a>配合IndexPreTransform</h3><p>如果输入向量是2048维的，且不得不减少到16 bytes，那么事先用PCA来降维就是合理的。</p><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash"> IndexIVFPQ索引应该设定为256维，而不是2048维</span></span><br><span class="line"> coarse_quantizer = faiss.IndexFlatL2 (256)</span><br><span class="line"> sub_index = faiss.IndexIVFPQ (coarse_quantizer, 256, ncoarse, 16, 8)</span><br><span class="line"><span class="meta"> #</span><span class="bash"> PCA 2048-&gt;256</span></span><br><span class="line"><span class="meta"> #</span><span class="bash"> 在降维后进行了随机旋转(第四个参数)</span></span><br><span class="line"> pca_matrix = faiss.PCAMatrix (2048, 256, 0, True) </span><br><span class="line"></span><br><span class="line"><span class="meta"> #</span><span class="bash">- 封装索引</span></span><br><span class="line"> index = faiss.IndexPreTransform (pca_matrix, sub_index)</span><br><span class="line"></span><br><span class="line"><span class="meta"> #</span><span class="bash"> 也需要对PCA进行训练</span></span><br><span class="line"> index.train(...)</span><br><span class="line"><span class="meta"> #</span><span class="bash"> PCA要比添加操作更早执行</span></span><br><span class="line"> index.add(...)</span><br></pre></td></tr></table></figure><h3 id="示例：升高维数"><a href="#示例：升高维数" class="headerlink" title="示例：升高维数"></a>示例：升高维数</h3><p>在往向量中插入0的时候，升高维数有时会很有用，这种方法对以下内容有帮助：</p><ul><li>让维数d增大4倍</li><li>让维数d增大M倍</li></ul>]]></content>
+      
       <categories>
-        <category>Technology</category>
+          
+          <category> Technology </category>
+          
       </categories>
-      <tags>
-        <tag>CV</tag>
-        <tag>Image Retrieval</tag>
-        <tag>Deep Learning</tag>
-        <tag>FAISS</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[带有返回值的多线程Python实例]]></title>
-    <url>%2F2018%2F07%2F14%2Fthreads%2F</url>
-    <content type="text"><![CDATA[计算密集型 vs. IO密集型我们根据任务对CPU的使用情况，可以把任务类型分为计算密集型和IO密集型，计算密集型任务需要大量占用计算资源，适合使用多进程执行，每个进程可以使用独立的CPU核心进行计算；IO密集型任务需要的计算量不大，但可能存在大量的IO、网络延迟等待，适合使用多线程执行。 有返回值的多线程实例Python初始的多线程对返回值的支持不是很好，我们可以通过类的继承来创建一个带有返回值的多线程类。 12345678910111213141516171819from threading import Thread class MyThread(Thread): def __init__(self, param1): Thread.__init__(self) self.param1 = param1 self.result = None def foo(self, param1): result = None # do something return result def run(self): self.result = self.foo(self.param1) def get_result(self): return self.result 然后我们就可以轻松地创建多线程： 123456789t_list = []for i in range(3): t = MyThread(i) t_list.append(t) t.start() for t in t_list: t.join() print(t.get_result()) 启动之后一定要t.join()将主程序阻塞，等待子进程运行结束，不然主线程比子线程跑的快，会拿不到结果。]]></content>
+      
+      
+        <tags>
+            
+            <tag> Image Retrieval </tag>
+            
+            <tag> CV </tag>
+            
+            <tag> Deep Learning </tag>
+            
+            <tag> FAISS </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>带有返回值的多线程Python实例</title>
+      <link href="/2018/07/14/threads/"/>
+      <url>/2018/07/14/threads/</url>
+      <content type="html"><![CDATA[<h2 id="计算密集型-vs-IO密集型"><a href="#计算密集型-vs-IO密集型" class="headerlink" title="计算密集型 vs. IO密集型"></a>计算密集型 vs. IO密集型</h2><p>我们根据任务对CPU的使用情况，可以把任务类型分为计算密集型和IO密集型，计算密集型任务需要大量占用计算资源，适合使用多进程执行，每个进程可以使用独立的CPU核心进行计算；IO密集型任务需要的计算量不大，但可能存在大量的IO、网络延迟等待，适合使用多线程执行。</p><h2 id="有返回值的多线程实例"><a href="#有返回值的多线程实例" class="headerlink" title="有返回值的多线程实例"></a>有返回值的多线程实例</h2><p>Python初始的多线程对返回值的支持不是很好，我们可以通过类的继承来创建一个带有返回值的多线程类。</p><figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">from threading import Thread</span><br><span class="line"> </span><br><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">MyThread</span>(<span class="title">Thread</span>):</span></span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(<span class="keyword">self</span>, param1)</span></span><span class="symbol">:</span></span><br><span class="line">        Thread.__init_<span class="number">_</span>(<span class="keyword">self</span>)</span><br><span class="line">        <span class="keyword">self</span>.param1 = param1</span><br><span class="line">        <span class="keyword">self</span>.result = None</span><br><span class="line">        </span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">foo</span><span class="params">(<span class="keyword">self</span>, param1)</span></span><span class="symbol">:</span></span><br><span class="line">        result = None</span><br><span class="line">        <span class="comment"># do something</span></span><br><span class="line">        <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">run</span><span class="params">(<span class="keyword">self</span>)</span></span><span class="symbol">:</span></span><br><span class="line">        <span class="keyword">self</span>.result = <span class="keyword">self</span>.foo(<span class="keyword">self</span>.param1)</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">def</span> <span class="title">get_result</span><span class="params">(<span class="keyword">self</span>)</span></span><span class="symbol">:</span></span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">self</span>.result</span><br></pre></td></tr></table></figure><p>然后我们就可以轻松地创建多线程：</p><figure class="highlight maxima"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">t_list = []</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">3</span>):</span><br><span class="line">    t = MyThread(i)</span><br><span class="line">    t_list.<span class="built_in">append</span>(t)</span><br><span class="line">    t.start()</span><br><span class="line">    </span><br><span class="line"><span class="keyword">for</span> t <span class="keyword">in</span> t_list:</span><br><span class="line">t.<span class="built_in">join</span>()</span><br><span class="line"><span class="built_in">print</span>(t.get_result())</span><br></pre></td></tr></table></figure><p>启动之后<strong>一定要t.join()</strong>将主程序阻塞，等待子进程运行结束，不然主线程比子线程跑的快，会拿不到结果。</p>]]></content>
+      
       <categories>
-        <category>Technology</category>
+          
+          <category> Technology </category>
+          
       </categories>
-      <tags>
-        <tag>Python</tag>
-        <tag>Thread</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[Multiprocessing实用技能总结]]></title>
-    <url>%2F2018%2F07%2F13%2Fmultiprocessing%2F</url>
-    <content type="text"><![CDATA[为什么要使用Python多进程多线程并发具有内存共享、通信简单等优势，那么为什么我们还要选择多进程呢？下面我引用廖雪峰的Python教程中的一段说明： 因为Python的线程虽然是真正的线程，但解释器执行代码时，有一个GIL锁：Global Interpreter Lock，任何Python线程执行前，必须先获得GIL锁，然后，每执行100条字节码，解释器就自动释放GIL锁，让别的线程有机会执行。这个GIL全局锁实际上把所有线程的执行代码都给上了锁，所以，多线程在Python中只能交替执行，即使100个线程跑在100核CPU上，也只能用到1个核。 GIL是Python解释器设计的历史遗留问题，通常我们用的解释器是官方实现的CPython，要真正利用多核，除非重写一个不带GIL的解释器。 所以，在Python中，可以使用多线程，但不要指望能有效利用多核。如果一定要通过多线程利用多核，那只能通过C扩展来实现，不过这样就失去了Python简单易用的特点。 不过，也不用过于担心，Python虽然不能利用多线程实现多核任务，但可以通过多进程实现多核任务。多个Python进程有各自独立的GIL锁，互不影响。 多进程的优势我们有很多的任务是相互独立运行的，也有很多任务实际上是可以通过拆分之后并行加速的。比如一个很大的list需要挨个遍历处理其中的元素，比如一组数据需要分别访问不同的方法处理得到不同的结果等等。 如果使用for loop来调用执行，实际上是一种串行的方式，必须要等待上一个任务结束才能执行下一个，中间会有大量的不必要的等待时间。 Pool我们使用进程池multiprocessing.Pool()来自动管理进程任务，首先要初始化进程池。 Pool方法接收一个参数MAX_TASKS，用于设置该进程池最多允许多少个子进程同时执行，若进程池中的子进程数大于MAX_TASKS，则剩余的子进程会进入等待，每当有子进程执行完毕，就会有新的子进程启动补充进去： 123from multiprocessing import PoolMAX_TASKS = 5pool = Pool(MAX_TASKS) 使用多进程可以加速计算的根本原因在于，可以利用多核CPU来分别执行不同的任务，因此最好先了解自己的CPU有多少个核心： 12# 该语句可以获取自己CPU的核心数NUM_CPUS = multiprocessing.cpu_count() 为避免多余的任务切换开销，一般MAX_TASKS不要大于NUM_CPUS。 然后我们需要定义一个function，该方法会被分配给每个新进程然后执行： 123def child_task(param1, param2): # do something return result 然后我们可以在主进程中调用apply_async方法来创建新进程并加入进程池中。 apply_async方法接受两个参数，第一个是要调用执行的方法，第二个是传递给该方法的参数： 1234567891011NUM_TASKS = 10results = []for i in range(NUM_TASKS): r = pool.apply_async(child_task, args=(param1, param2)) results.append(r)p.close() # 进程池停止接收新进程p.join() # 阻塞主进程，等待所有子进程结束for r in results: print(r.get()) 需要注意到上面的代码中，r.get()需要放到p.close()和p.join()执行进程池回收之后再使用。这是因为apply_async之后的语句是阻塞的，r.get()会等待上一条语句执行完毕才执行，因此获取返回值的过程最好放在进程池回收以后。]]></content>
+      
+      
+        <tags>
+            
+            <tag> Python </tag>
+            
+            <tag> Thread </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>Multiprocessing实用技能总结</title>
+      <link href="/2018/07/13/multiprocessing/"/>
+      <url>/2018/07/13/multiprocessing/</url>
+      <content type="html"><![CDATA[<h2 id="为什么要使用Python多进程"><a href="#为什么要使用Python多进程" class="headerlink" title="为什么要使用Python多进程"></a>为什么要使用Python多进程</h2><p>多线程并发具有内存共享、通信简单等优势，那么为什么我们还要选择多进程呢？下面我引用廖雪峰的Python教程中的一段说明：</p><blockquote><p>因为Python的线程虽然是真正的线程，但解释器执行代码时，有一个GIL锁：Global Interpreter Lock，任何Python线程执行前，必须先获得GIL锁，然后，每执行100条字节码，解释器就自动释放GIL锁，让别的线程有机会执行。这个GIL全局锁实际上把所有线程的执行代码都给上了锁，所以，多线程在Python中只能交替执行，即使100个线程跑在100核CPU上，也只能用到1个核。</p></blockquote><blockquote><p>GIL是Python解释器设计的历史遗留问题，通常我们用的解释器是官方实现的CPython，要真正利用多核，除非重写一个不带GIL的解释器。</p></blockquote><blockquote><p>所以，在Python中，可以使用多线程，但不要指望能有效利用多核。如果一定要通过多线程利用多核，那只能通过C扩展来实现，不过这样就失去了Python简单易用的特点。</p></blockquote><blockquote><p>不过，也不用过于担心，Python虽然不能利用多线程实现多核任务，但可以通过多进程实现多核任务。多个Python进程有各自独立的GIL锁，互不影响。</p></blockquote><h2 id="多进程的优势"><a href="#多进程的优势" class="headerlink" title="多进程的优势"></a>多进程的优势</h2><p>我们有很多的任务是相互独立运行的，也有很多任务实际上是可以通过拆分之后并行加速的。比如一个很大的list需要挨个遍历处理其中的元素，比如一组数据需要分别访问不同的方法处理得到不同的结果等等。</p><p>如果使用for loop来调用执行，实际上是一种串行的方式，必须要等待上一个任务结束才能执行下一个，中间会有大量的不必要的等待时间。</p><h2 id="Pool"><a href="#Pool" class="headerlink" title="Pool"></a>Pool</h2><p>我们使用进程池multiprocessing.Pool()来自动管理进程任务，首先要初始化进程池。</p><p>Pool方法接收一个参数MAX_TASKS，用于<strong>设置该进程池最多允许多少个子进程同时执行</strong>，若进程池中的子进程数大于MAX_TASKS，则剩余的子进程会进入等待，每当有子进程执行完毕，就会有新的子进程启动补充进去：</p><figure class="highlight routeros"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> multiprocessing import Pool</span><br><span class="line">MAX_TASKS = 5</span><br><span class="line">pool = Pool(MAX_TASKS)</span><br></pre></td></tr></table></figure><p>使用多进程可以加速计算的根本原因在于，可以利用多核CPU来分别执行不同的任务，因此最好先了解自己的CPU有多少个核心：</p><figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 该语句可以获取自己CPU的核心数</span></span><br><span class="line"><span class="attr">NUM_CPUS</span> = multiprocessing.cpu_count()</span><br></pre></td></tr></table></figure><p><strong>为避免多余的任务切换开销，一般MAX_TASKS不要大于NUM_CPUS。</strong></p><p>然后我们需要定义一个function，该方法会被分配给每个新进程然后执行：</p><figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">child_task</span><span class="params">(param1, param2)</span></span><span class="symbol">:</span></span><br><span class="line"><span class="comment"># do something</span></span><br><span class="line"><span class="keyword">return</span> result</span><br></pre></td></tr></table></figure><p>然后我们可以在主进程中调用apply_async方法来创建新进程并加入进程池中。</p><p>apply_async方法接受两个参数，第一个是要调用执行的方法，第二个是传递给该方法的参数：</p><figure class="highlight maxima"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">NUM_TASKS = <span class="number">10</span></span><br><span class="line">results = []</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(NUM_TASKS):</span><br><span class="line">r = pool.apply_async(child_task, <span class="built_in">args</span>=(param1, param2))</span><br><span class="line">results.<span class="built_in">append</span>(r)</span><br><span class="line"></span><br><span class="line">p.<span class="built_in">close</span>() # 进程池停止接收新进程</span><br><span class="line">p.<span class="built_in">join</span>()  # 阻塞主进程，等待所有子进程结束</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> r <span class="keyword">in</span> results:</span><br><span class="line"><span class="built_in">print</span>(r.<span class="built_in">get</span>())</span><br></pre></td></tr></table></figure><p>需要注意到上面的代码中，r.get()需要放到p.close()和p.join()执行进程池回收之后再使用。这是因为apply_async之后的语句是阻塞的，r.get()会等待上一条语句执行完毕才执行，因此<strong>获取返回值的过程最好放在进程池回收以后</strong>。</p>]]></content>
+      
       <categories>
-        <category>Technology</category>
+          
+          <category> Technology </category>
+          
       </categories>
-      <tags>
-        <tag>Python</tag>
-        <tag>multiprocessing</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[用FPN和ROIalign来进行图像检索]]></title>
-    <url>%2F2018%2F06%2F28%2F2018-6-28%2F</url>
-    <content type="text"><![CDATA[上一版的模型出来以后测试发现一个问题，同一张图，低分辨率和高分辨率，检索结果完全不同。并且最气的是，这两张图相互查不到对方，模型输出的两个向量距离很远，这是不可接受的。 这个问题其实不难想到，深度模型每一层卷积都会对特征图进行压缩，在模型内部自然地形成一个金字塔形的结构（哪怕有padding操作，其实也只是在维持特征图尺寸，实际的信息依然被压缩，这是不可避免的）。就像一个逐渐抽象的过程中，势必要丢掉一些冗余信息，才能抓取到代表性的特征。 于是乎，当输入的图片本身分辨率很低，即含有的信息量很少时，这种深层压缩的结果会是毁灭性的。可以想象成从飞机上俯视地面上的一个人，你看到的或许仅仅是一个肉色的小色块了。 这个问题在目标检测中同样存在，之前流行的主流算法都是直接使用骨干网络的最后一层卷积图作为信息的载体，因此，当目标在图中的比例非常小时，往往很难被算法检测到。针对这个问题，Kaiming He大神提出了一个很厉害的通用结构FPN，仅仅是把它直接结合到Faster RCNN上，就让检测的召回率大大提升。 一般而言，不同阶段的卷积层输出含有不同层次的空间和语义信息，直接从模型的每一段提出来的卷积图是不能混合使用的。FPN通过top-down和横向连接，以及一个3*3的smooth layer解决了这个问题，使不同阶段的特征图语义统一成为现实。 对于低分辨率的图片，通过把深层卷积图上采样叠加到浅层卷积图上，可以在保留高层次语义信息的基础上，极大地保留空间信息。 k = floor(4 + sqrt(w * h) / 224) 通过这个公式，可以自动根据输入图片的尺寸来调整获取对应尺度的特征图。 这里有一个疑惑是，很明显在FPN结构中，P2会是该结构受益最大的层，因为它整合了所有阶段的卷积图信息，包含了最丰富的空间和语义信息。在Paper的消融实验里也证实，只使用P2卷积图就能得到非常好的效果。那么为什么还要使用不同阶段的特征图？或者说，何不直接对所有尺度的图片使用P2特征图？ 我的猜测是，也许对于高分辨率图片，其包含的空间信息过于庞大，即使通过深层模型依然可以有所保留，因而不需要再从浅层卷积图获取，这种特征图叠加融合的手段，主要目的还是在改善低分辨率的性能，是一种补偿手段，在高分辨率图上反而会因信息过多而再次带来语义的不统一，这是一种空间与语义的权衡折中。 从直觉上，通过在图片上建立FPN，再选择合适的尺度特征，就可以用来进行图像检索。相较于目标检测中有RPN提供ROI，在图像检索中只能以整张图作为输入，与ROI类似的，图片的比例也往往不是标准的1:1，提取得到的特征图也是如此，直接插值放缩是不可行的，会破坏原有的空间结构，因此还需要引入ROI池化来使得特征维度统一。根据Mask RCNN的研究，ROI池化存在各种各样的不足之处，ROIalign是一个更好的策略。 图像检索不同于目标检测的另一点是，ROI的边界往往是紧贴检测对象的，换言之，目标会充满整个ROI；而图片并非如此，往往还会存在大量的留白区域，因此直接对全图进行ROIalign同样会导致得到的特征的不一致，这里我才用了以下策略来对要输入模型的图片进行预处理： 1234567# 伪代码# 获取长边pad = img.width if img.width &gt; img.height else img.height# 用长边对图片进行扩充Padding(img)# 从图片中心截取pad*pad的区域CenterCrop(img, pad) 如此一来，我们就得到了将短边延拓到长边尺寸的图片。我们在这个图片的基础上进行FPN和ROIalign得到最终的特征向量。]]></content>
+      
+      
+        <tags>
+            
+            <tag> Python </tag>
+            
+            <tag> multiprocessing </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>用FPN和ROIalign来进行图像检索</title>
+      <link href="/2018/06/28/2018-6-28/"/>
+      <url>/2018/06/28/2018-6-28/</url>
+      <content type="html"><![CDATA[<p>上一版的模型出来以后测试发现一个问题，同一张图，低分辨率和高分辨率，检索结果完全不同。并且最气的是，这两张图相互查不到对方，模型输出的两个向量距离很远，这是不可接受的。</p><p>这个问题其实不难想到，深度模型每一层卷积都会对特征图进行压缩，在模型内部自然地形成一个金字塔形的结构（哪怕有padding操作，其实也只是在维持特征图尺寸，实际的信息依然被压缩，这是不可避免的）。就像一个逐渐抽象的过程中，势必要丢掉一些冗余信息，才能抓取到代表性的特征。</p><p>于是乎，当输入的图片本身分辨率很低，即含有的信息量很少时，这种深层压缩的结果会是毁灭性的。可以想象成从飞机上俯视地面上的一个人，你看到的或许仅仅是一个肉色的小色块了。</p><p>这个问题在目标检测中同样存在，之前流行的主流算法都是直接使用骨干网络的最后一层卷积图作为信息的载体，因此，当目标在图中的比例非常小时，往往很难被算法检测到。针对这个问题，Kaiming He大神提出了一个很厉害的通用结构FPN，仅仅是把它直接结合到Faster RCNN上，就让检测的召回率大大提升。</p><p>一般而言，不同阶段的卷积层输出含有不同层次的空间和语义信息，直接从模型的每一段提出来的卷积图是不能混合使用的。FPN通过top-down和横向连接，以及一个3*3的smooth layer解决了这个问题，使不同阶段的特征图语义统一成为现实。</p><p>对于低分辨率的图片，通过把深层卷积图上采样叠加到浅层卷积图上，可以在保留高层次语义信息的基础上，极大地保留空间信息。</p><blockquote><p>k = floor(4 + sqrt(w * h) / 224)</p></blockquote><p>通过这个公式，可以自动根据输入图片的尺寸来调整获取对应尺度的特征图。</p><p>这里有一个疑惑是，很明显在FPN结构中，P2会是该结构受益最大的层，因为它整合了所有阶段的卷积图信息，包含了最丰富的空间和语义信息。在Paper的消融实验里也证实，只使用P2卷积图就能得到非常好的效果。那么为什么还要使用不同阶段的特征图？或者说，何不直接对所有尺度的图片使用P2特征图？</p><p>我的猜测是，也许对于高分辨率图片，其包含的空间信息过于庞大，即使通过深层模型依然可以有所保留，因而不需要再从浅层卷积图获取，这种特征图叠加融合的手段，主要目的还是在改善低分辨率的性能，是一种补偿手段，在高分辨率图上反而会因信息过多而再次带来语义的不统一，这是一种空间与语义的权衡折中。</p><p>从直觉上，通过在图片上建立FPN，再选择合适的尺度特征，就可以用来进行图像检索。相较于目标检测中有RPN提供ROI，在图像检索中只能以整张图作为输入，与ROI类似的，图片的比例也往往不是标准的1:1，提取得到的特征图也是如此，直接插值放缩是不可行的，会破坏原有的空间结构，因此还需要引入ROI池化来使得特征维度统一。根据Mask RCNN的研究，ROI池化存在各种各样的不足之处，ROIalign是一个更好的策略。</p><p>图像检索不同于目标检测的另一点是，ROI的边界往往是紧贴检测对象的，换言之，目标会充满整个ROI；而图片并非如此，往往还会存在大量的留白区域，因此直接对全图进行ROIalign同样会导致得到的特征的不一致，这里我才用了以下策略来对要输入模型的图片进行预处理：</p><figure class="highlight vala"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta"># 伪代码</span></span><br><span class="line"><span class="meta"># 获取长边</span></span><br><span class="line">pad = img.width <span class="keyword">if</span> img.width &gt; img.height <span class="keyword">else</span> img.height</span><br><span class="line"><span class="meta"># 用长边对图片进行扩充</span></span><br><span class="line">Padding(img)</span><br><span class="line"><span class="meta"># 从图片中心截取pad*pad的区域</span></span><br><span class="line">CenterCrop(img, pad)</span><br></pre></td></tr></table></figure><p>如此一来，我们就得到了将短边延拓到长边尺寸的图片。我们在这个图片的基础上进行FPN和ROIalign得到最终的特征向量。</p>]]></content>
+      
       <categories>
-        <category>Technology</category>
+          
+          <category> Technology </category>
+          
       </categories>
-      <tags>
-        <tag>Image Retrieval</tag>
-        <tag>FPN</tag>
-        <tag>ROIalign</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[随笔：人类语言与神经网络类比]]></title>
-    <url>%2F2018%2F05%2F31%2F2018-5-31%2F</url>
-    <content type="text"><![CDATA[在神经网络构筑的维度空间中不断变换的向量，其实很像一种语言，训练神经网络，如同在创造一门新的符号语言。 我觉得这是一个很有意思的类比，人类的语言和特征向量之间，存在着很多有意思的相似之处。 当一张图片通过神经网络后，变为了一条某维度里的向量，这个过程就如同人看见这张图片后，可以描述图片内容为：一只很像熊猫的动物懒洋洋地趴在翠绿色的竹林正中间的灰色的石头上。这句描述的话就可以看成一个向量。 向量的维度是可以变换的，就如同语言描述可以改变，同样的一张图片，或许我们也可以描述为：一只熊猫，或者一只熊猫趴在石头上。 我们的分类模型其实就是把输出的向量维度数与分类个数联系在了一起，在“人，狗，熊猫”这个三分类的问题下，毫无疑问那张图片会在“熊猫”上得分最高。 卷积神经网络之所以更加成功，原因就在于它更关注局部特征，如果要类比的话，我觉得它就像一种针对细节进行详细描述的语言修辞，而全连接层更像在归纳总结一些关键词或者概述性的语言：图片通过卷积网络后我们得到了一串非常冗长的、细碎的细节描写，然后通过全连接层变为一系列关键词。 假如我们在最后的全连接层前面新加入了一层，问题就变得很有意思了，假如还是“人，狗，熊猫”的三分类问题，我们在前面加入了一层100个单元的隐藏层，这个过程就好像是先把卷积层的描述归纳为100个关键词，且这100个词的不同权重组合能够最终归纳为“人，狗，熊猫”。]]></content>
+      
+      
+        <tags>
+            
+            <tag> FPN </tag>
+            
+            <tag> ROIalign </tag>
+            
+            <tag> Image Retrieval </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>随笔：人类语言与神经网络类比</title>
+      <link href="/2018/05/31/2018-5-31/"/>
+      <url>/2018/05/31/2018-5-31/</url>
+      <content type="html"><![CDATA[<p>在神经网络构筑的维度空间中不断变换的向量，其实很像一种语言，训练神经网络，如同在创造一门新的符号语言。</p><p>我觉得这是一个很有意思的类比，人类的语言和特征向量之间，存在着很多有意思的相似之处。</p><p>当一张图片通过神经网络后，变为了一条某维度里的向量，这个过程就如同人看见这张图片后，可以描述图片内容为：一只很像熊猫的动物懒洋洋地趴在翠绿色的竹林正中间的灰色的石头上。这句描述的话就可以看成一个向量。</p><p>向量的维度是可以变换的，就如同语言描述可以改变，同样的一张图片，或许我们也可以描述为：一只熊猫，或者一只熊猫趴在石头上。</p><p>我们的分类模型其实就是把输出的向量维度数与分类个数联系在了一起，在“人，狗，熊猫”这个三分类的问题下，毫无疑问那张图片会在“熊猫”上得分最高。</p><p>卷积神经网络之所以更加成功，原因就在于它更关注局部特征，如果要类比的话，我觉得它就像一种针对细节进行详细描述的语言修辞，而全连接层更像在归纳总结一些关键词或者概述性的语言：图片通过卷积网络后我们得到了一串非常冗长的、细碎的细节描写，然后通过全连接层变为一系列关键词。</p><p>假如我们在最后的全连接层前面新加入了一层，问题就变得很有意思了，假如还是“人，狗，熊猫”的三分类问题，我们在前面加入了一层100个单元的隐藏层，这个过程就好像是先把卷积层的描述归纳为100个关键词，且这100个词的不同权重组合能够最终归纳为“人，狗，熊猫”。</p>]]></content>
+      
       <categories>
-        <category>Notes</category>
+          
+          <category> Notes </category>
+          
       </categories>
-      <tags>
-        <tag>卷积层</tag>
-        <tag>全连接层</tag>
-        <tag>神经网络</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[随笔：飞机上1]]></title>
-    <url>%2F2018%2F05%2F28%2F2018-5-28%2F</url>
-    <content type="text"><![CDATA[2018.5.28 21:00 成都-&gt;北京 在生活中你我应该都有过这样的经历：自己的某种想法、某种情感、某种感受，找不到任何词句来形容，不论怎么组织语言，表达出来的东西似乎都离自己内心的那个点差了些什么。 你我应该也都有过这种体验：某时某刻，突然听到某个人说的一句话，某首歌的一节词，某篇文章的一些句子，突然直戳内心，道尽了你一直以来难以言表的某些东西，使你感到从内到外的深切共鸣。 夏目漱石曾有一个经典的比喻，他形容日语是高情境的语言，当日本人希望表达“我爱你”时，用“月色真美”将会更加恰当。木心说“文字的简练来源于内心的真诚，我十二万分的爱你，就不如说，我爱你”。 我们的思想、情感、感受、思维，应该是一种很高维度的东西，而相比之下，我们的语言是低维的。所以才会出现那么多的词不达意、难以言说。]]></content>
+      
+      
+        <tags>
+            
+            <tag> 卷积层 </tag>
+            
+            <tag> 全连接层 </tag>
+            
+            <tag> 神经网络 </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>随笔：飞机上1</title>
+      <link href="/2018/05/28/2018-5-28/"/>
+      <url>/2018/05/28/2018-5-28/</url>
+      <content type="html"><![CDATA[<p>2018.5.28 21:00 成都-&gt;北京</p><p>在生活中你我应该都有过这样的经历：自己的某种想法、某种情感、某种感受，找不到任何词句来形容，不论怎么组织语言，表达出来的东西似乎都离自己内心的那个点差了些什么。</p><p>你我应该也都有过这种体验：某时某刻，突然听到某个人说的一句话，某首歌的一节词，某篇文章的一些句子，突然直戳内心，道尽了你一直以来难以言表的某些东西，使你感到从内到外的深切共鸣。</p><p>夏目漱石曾有一个经典的比喻，他形容日语是高情境的语言，当日本人希望表达“我爱你”时，用“月色真美”将会更加恰当。木心说“文字的简练来源于内心的真诚，我十二万分的爱你，就不如说，我爱你”。</p><p>我们的思想、情感、感受、思维，应该是一种很高维度的东西，而相比之下，我们的语言是低维的。所以才会出现那么多的词不达意、难以言说。</p>]]></content>
+      
       <categories>
-        <category>Notes</category>
+          
+          <category> Notes </category>
+          
       </categories>
-      <tags>
-        <tag>思维 语言 夏目漱石 木心 维度</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[无题]]></title>
-    <url>%2F2018%2F05%2F09%2F%E6%97%A0%E9%A2%98%2F</url>
-    <content type="text"><![CDATA[看着秋日四五点的太阳 总想到行将沉没的爱情 虽然还留有光辉的外表在强装 但我们都明晰地感觉到那里面已经冷了 或许必须承认的是其中还有温度吧 但我们都诚实地添了衣服 为迎接不远到来的寒夜 这看上去像是一种要自欺的态度 现实又冷厉得无可辩驳 此时沐浴在余晖下面 街上的行人是最线条分明的 多情者纵情开怀及时行乐 痴情者惘然自立冰冷不觉 无情者故自前行目不斜分 一时街道上疏影横斜泾渭明 前望后顾恍如一般景色 竟像是身立明镜之前 然陷身其内又不知左右何方是人何处是影 所以我讷讷然站在那里 唯恐撞上冰冷坚硬的镜面 身觉冰冷入袭却举步不得 落在旁人眼里 大概一如我所见的街上众人吧]]></content>
+      
+      
+        <tags>
+            
+            <tag> 思维 语言 夏目漱石 木心 维度 </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>无题</title>
+      <link href="/2018/05/09/%E6%97%A0%E9%A2%98/"/>
+      <url>/2018/05/09/%E6%97%A0%E9%A2%98/</url>
+      <content type="html"><![CDATA[<p>看着秋日四五点的太阳</p><p>总想到行将沉没的爱情</p><p>虽然还留有光辉的外表在强装</p><p>但我们都明晰地感觉到那里面已经冷了</p><p>或许必须承认的是其中还有温度吧</p><p>但我们都诚实地添了衣服</p><p>为迎接不远到来的寒夜</p><p>这看上去像是一种要自欺的态度</p><p>现实又冷厉得无可辩驳</p><p>此时沐浴在余晖下面</p><p>街上的行人是最线条分明的</p><p>多情者纵情开怀及时行乐</p><p>痴情者惘然自立冰冷不觉</p><p>无情者故自前行目不斜分</p><p>一时街道上疏影横斜泾渭明</p><p>前望后顾恍如一般景色</p><p>竟像是身立明镜之前</p><p>然陷身其内又不知左右何方是人何处是影</p><p>所以我讷讷然站在那里</p><p>唯恐撞上冰冷坚硬的镜面</p><p>身觉冰冷入袭却举步不得</p><p>落在旁人眼里</p><p>大概一如我所见的街上众人吧</p>]]></content>
+      
       <categories>
-        <category>Emotion</category>
+          
+          <category> Emotion </category>
+          
       </categories>
-      <tags>
-        <tag>脉络</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title><![CDATA[论文笔记：Faster R-CNN Features for Instance Search]]></title>
-    <url>%2F2018%2F05%2F07%2F%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%9AFaster%20R-CNN%20Features%20for%20Instance%20Search%2F</url>
-    <content type="text"><![CDATA[[CVPR 2016] Faster R-CNN Features for Instance SearchPaper: Link Abstract 研究基于CNN的目标检测网络得到的feature是否有利于image retrieval 研究对目标检测网络进行fine-tune后检索效果是否有所提升 实验数据集： Oxford Building 5K Paris Buildings 6K TRECVid Instance Search 2013 What they do 通过一次前向传播从CNN中提取出图像的全局和局部特征 利用从RPN中学到的位置信息设计空间重排方案 分析了对目标检测CNN进行fine-tune对检索的影响 Conclusion 利用目标检测的CNN特征可以用于图像检索 使用检索的图像对CNN进行微调，可以较大提升检索效果 IntroductionBackground 利用预训练的CNNs提取现成的特征，在图像检索通用数据集上获得了不错的效果 实例检索系统 = 快速筛选（对数据库进行重排） + 高级检索（一些高计算量的阶段）。 常见的重排方式有几何验证和空间分析 空间分析重排是指，使用不同尺寸的滑动窗口滑过图像，获得图像内部不同局部区域的特征表达，将这些局部特征与查询实例进行比对。 Related WorkCNNs for Instance Search 早期研究中利用全连接层的特征进行图像检索 将从不同图像sub-patches提取的全连接层特征进行结合，得到更好的结果 研究发现图像检索领域使用卷积层特征进行，比全连接层特征结果更好 Object Detection CNNs 早期使用滑动窗口方法 随后R-CNN采用Selective Search 现在使用端到端的方法 MethodologyCNN-based Representations 作者将查询实例定义为找到包含查询目标的边界框 提出两种池化方案： Image-wise pooling of activations(IPA):忽略操作目标建议的所有层，只从最后一个卷积层提取特征，对所有滤波器的输出进行求和 Region-wise pooling of activations(RPA)：利用区域池化层提取RPN得到的目标建议的特征。对于每个建议窗口，都可以利用其中RoI池化层的输出来生成表达。 求和池化需要进行L2标准化、白化、L2标准化，而最大池化仅仅进行一次L2标准化 Fine-tuning Faster R-CNN 作者提出了两种微调方案： 只更新分类这一分支的全连接层的权重 前两个卷积层之后的所有层都更新 Image Retrieval 作者提出检索由三步构成： 快速筛选 空间重排 扩展查询 快速筛选是利用IPA，即图像的全局表达进行一次过滤，只保留前N个结果 空间重排由两种方法： CA-SR：假设类别不可知，将查询实例经过网络得到的所有RPA，与快速筛选后剩下的每幅图的RPA进行比较 CS-SR：使用微调后的网络，可以用每个RPN预测的分类得分作为查询对象的相似分数 扩展查询策略为取重排后的前M个结果的特征向量，对他们进行求和平均，用平均后得到的结果重新进行一次查询 Notes图像检索实际上是把图片转为向量在高维空间中位置的比较，两个向量越近，距离越短，则说明越相似。直接使用从整张图片得到的特征向量进行比对的图片检索系统效果有很大的优化空间，因为图片中与检索目标无关的信息越多，就会加大向量在其他维度的权重，进而使得向量在空间中的位置发生偏移，与希望得到的结果的距离变大，这种现象随着查询目标在原图中所占比例的大小越小、显著性越低、对比越不强烈，检索偏差也会越大。 举一个比较简单而极端的例子：我们可以想象有一个10维的空间，在这个空间中，只有第1，2，3维的方向上代表了我们所查询的对象的表达（实际上可能每个维度上都有不同的权重，在这里我们极端地假设其他维度上权重为0）。通过CNN得到的特征向量，实际上是由图片内的内容共同组成的，与我们所查询的对象无关的内容也掺杂其中，这些无关内容在10维空间中标示为其他维度上的不同权重。 因此，图片全局的表达可以用作第一步的快速筛选，然后再使用局部表达精确检索。]]></content>
+      
+      
+        <tags>
+            
+            <tag> 脉络 </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    <entry>
+      <title>论文笔记：Faster R-CNN Features for Instance Search</title>
+      <link href="/2018/05/07/%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%9AFaster%20R-CNN%20Features%20for%20Instance%20Search/"/>
+      <url>/2018/05/07/%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%9AFaster%20R-CNN%20Features%20for%20Instance%20Search/</url>
+      <content type="html"><![CDATA[<h1 id="CVPR-2016-Faster-R-CNN-Features-for-Instance-Search"><a href="#CVPR-2016-Faster-R-CNN-Features-for-Instance-Search" class="headerlink" title="[CVPR 2016] Faster R-CNN Features for Instance Search"></a>[CVPR 2016] Faster R-CNN Features for Instance Search</h1><p>Paper: <a href="https://arxiv.org/abs/1604.08893" target="_blank" rel="noopener">Link</a></p><h2 id="Abstract"><a href="#Abstract" class="headerlink" title="Abstract"></a>Abstract</h2><ul><li>研究基于CNN的目标检测网络得到的feature是否有利于image retrieval</li><li>研究对目标检测网络进行fine-tune后检索效果是否有所提升</li><li>实验数据集：<ul><li>Oxford Building 5K</li><li>Paris Buildings 6K</li><li>TRECVid Instance Search 2013</li></ul></li></ul><h3 id="What-they-do"><a href="#What-they-do" class="headerlink" title="What they do"></a>What they do</h3><ul><li>通过一次前向传播从CNN中提取出图像的全局和局部特征</li><li>利用从RPN中学到的位置信息设计空间重排方案</li><li>分析了对目标检测CNN进行fine-tune对检索的影响</li></ul><h2 id="Conclusion"><a href="#Conclusion" class="headerlink" title="Conclusion"></a>Conclusion</h2><ul><li>利用目标检测的CNN特征可以用于图像检索</li><li>使用检索的图像对CNN进行微调，可以较大提升检索效果</li></ul><h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><h3 id="Background"><a href="#Background" class="headerlink" title="Background"></a>Background</h3><ol><li>利用预训练的CNNs提取现成的特征，在图像检索通用数据集上获得了不错的效果</li><li>实例检索系统 = 快速筛选（对数据库进行重排） + 高级检索（一些高计算量的阶段）。</li><li>常见的重排方式有<strong>几何验证</strong>和<strong>空间分析</strong></li><li>空间分析重排是指，使用不同尺寸的滑动窗口滑过图像，获得图像内部不同局部区域的特征表达，将这些局部特征与查询实例进行比对。</li></ol><h3 id="Related-Work"><a href="#Related-Work" class="headerlink" title="Related Work"></a>Related Work</h3><h4 id="CNNs-for-Instance-Search"><a href="#CNNs-for-Instance-Search" class="headerlink" title="CNNs for Instance Search"></a>CNNs for Instance Search</h4><ul><li>早期研究中利用全连接层的特征进行图像检索</li><li>将从不同图像sub-patches提取的全连接层特征进行结合，得到更好的结果</li><li>研究发现图像检索领域使用卷积层特征进行，比全连接层特征结果更好</li></ul><h4 id="Object-Detection-CNNs"><a href="#Object-Detection-CNNs" class="headerlink" title="Object Detection CNNs"></a>Object Detection CNNs</h4><ul><li>早期使用滑动窗口方法</li><li>随后R-CNN采用Selective Search</li><li>现在使用端到端的方法</li></ul><h2 id="Methodology"><a href="#Methodology" class="headerlink" title="Methodology"></a>Methodology</h2><h3 id="CNN-based-Representations"><a href="#CNN-based-Representations" class="headerlink" title="CNN-based Representations"></a>CNN-based Representations</h3><ul><li>作者将查询实例定义为找到<strong>包含查询目标的边界框</strong></li><li>提出两种池化方案：<ul><li><strong>Image-wise pooling of activations(IPA)</strong>:忽略操作目标建议的所有层，只从最后一个卷积层提取特征，对所有滤波器的输出进行求和</li><li><strong>Region-wise pooling of activations(RPA)</strong>：利用区域池化层提取RPN得到的目标建议的特征。对于每个建议窗口，都可以利用其中RoI池化层的输出来生成表达。</li></ul></li><li>求和池化需要进行L2标准化、白化、L2标准化，而最大池化仅仅进行一次L2标准化</li></ul><h3 id="Fine-tuning-Faster-R-CNN"><a href="#Fine-tuning-Faster-R-CNN" class="headerlink" title="Fine-tuning Faster R-CNN"></a>Fine-tuning Faster R-CNN</h3><ul><li>作者提出了两种微调方案：<ol><li>只更新分类这一分支的全连接层的权重</li><li>前两个卷积层之后的所有层都更新</li></ol></li></ul><h3 id="Image-Retrieval"><a href="#Image-Retrieval" class="headerlink" title="Image Retrieval"></a>Image Retrieval</h3><ul><li>作者提出检索由三步构成：<ol><li>快速筛选</li><li>空间重排</li><li>扩展查询</li></ol></li><li>快速筛选是利用IPA，即图像的全局表达进行一次过滤，只保留前N个结果</li><li>空间重排由两种方法：<ol><li>CA-SR：假设类别不可知，将查询实例经过网络得到的所有RPA，与快速筛选后剩下的每幅图的RPA进行比较</li><li>CS-SR：使用微调后的网络，可以用每个RPN预测的分类得分作为查询对象的相似分数</li></ol></li><li>扩展查询策略为取重排后的前M个结果的特征向量，对他们进行求和平均，用平均后得到的结果重新进行一次查询</li></ul><h2 id="Notes"><a href="#Notes" class="headerlink" title="Notes"></a>Notes</h2><p>图像检索实际上是把图片转为向量在高维空间中位置的比较，两个向量越近，距离越短，则说明越相似。直接使用从整张图片得到的特征向量进行比对的图片检索系统效果有很大的优化空间，因为图片中与检索目标无关的信息越多，就会加大向量在其他维度的权重，进而使得向量在空间中的位置发生偏移，与希望得到的结果的距离变大，这种现象随着查询目标在原图中所占比例的大小越小、显著性越低、对比越不强烈，检索偏差也会越大。</p><p>举一个比较简单而极端的例子：我们可以想象有一个10维的空间，在这个空间中，只有第1，2，3维的方向上代表了我们所查询的对象的表达（实际上可能每个维度上都有不同的权重，在这里我们极端地假设其他维度上权重为0）。通过CNN得到的特征向量，实际上是由图片内的内容共同组成的，与我们所查询的对象无关的内容也掺杂其中，这些无关内容在10维空间中标示为其他维度上的不同权重。</p><p>因此，图片全局的表达可以用作第一步的快速筛选，然后再使用局部表达精确检索。</p>]]></content>
+      
       <categories>
-        <category>Technology</category>
+          
+          <category> Technology </category>
+          
       </categories>
-      <tags>
-        <tag>CV</tag>
-        <tag>Image Retrieval</tag>
-        <tag>Deep Learning</tag>
-      </tags>
-  </entry>
+      
+      
+        <tags>
+            
+            <tag> Image Retrieval </tag>
+            
+            <tag> CV </tag>
+            
+            <tag> Deep Learning </tag>
+            
+        </tags>
+      
+    </entry>
+    
+  
+  
 </search>
