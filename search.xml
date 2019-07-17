@@ -3,7 +3,7 @@
   <entry>
     <title><![CDATA[线段树Python]]></title>
     <url>%2F2019%2F07%2F16%2F%E7%BA%BF%E6%AE%B5%E6%A0%91Python%2F</url>
-    <content type="text"><![CDATA[最近在参加秋招，头条面试的时候遇到一道题感觉很契合实际场景，唤起了我对线段树的记忆题目是这样的： 给出一份服务器一天的log文件，包含用户id，登录时间，登出时间，求当天服务器最大在线人数是多少 当时看完这个题第一反应就是可以用线段树，但是线段树我以前只是了解了一下概念和适用场景，没有真正仔细研读，趁此机会算是好好学习了一下 线段树网上的教程一搜一大把，不过很少有Python版本的，能搜到的也都没有区间更新或者是维护节点和，而不是求最大值，所以把我的版本贴出来 1234567891011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465666768697071727374757677787980818283848586# 定义树节点，l,r, val表示该节点记录的是区间[l, r]的最大值是valclass Tree(): def __init__(self): self.l = 0 self.r = 0 self.lazy = 0 self.val = 0 # 二叉树是堆形式，可以用一维数组存储，注意数组长度要开4倍空间tree = [Tree() for i in range(10*4)]# 建树，用cur&lt;&lt;1访问左子树，cur&lt;&lt;1|1访问右子树，位运算操作很方便def build(cur, l, r): tree[cur].l, tree[cur].r, tree[cur].lazy, tree[cur].val = l, r, 0, 0 # 当l==r的时候结束递归 if l &lt; r: mid = l + r &gt;&gt; 1 build(cur&lt;&lt;1, l, mid) build(cur&lt;&lt;1|1, mid+1, r)# 当子节点计算完成后，用子节点的值来更新自己的值def pushup(cur): tree[cur].val = max(tree[cur&lt;&lt;1].val, tree[cur&lt;&lt;1|1].val) # 单点更新def add(cur, x, v): if tree[cur].l == tree[cur].r: tree[cur].val += v else: mid = tree[cur].r + tree[cur].l &gt;&gt; 1 if x &gt; mid: add(cur&gt;&gt;1|1, x, v) else: add(cur&lt;&lt;1, x, v) pushup(cur)# 将lazy标记向下传递一层def pushdown(cur): if tree[cur].lazy: lazy = tree[cur].lazy tree[cur&lt;&lt;1].lazy += lazy tree[cur&lt;&lt;1|1].lazy += lazy tree[cur&lt;&lt;1].val += lazy tree[cur&lt;&lt;1|1].val += lazy tree[cur].lazy = 0# 区间更新def update(cur, l, r, v): if l &lt;= tree[cur].l and tree[cur].r &lt;= r: tree[cur].lazy += v tree[cur].val += v return if r &lt; tree[cur].l or l &gt; tree[cur].r: return if tree[cur].lazy: pushdown(cur) update(cur&lt;&lt;1, l, r, v) update(cur&lt;&lt;1|1, l, r, v) pushup(cur)# 区间查询def query(cur, l, r): if tree[cur].l &lt;= l and r &lt;= tree[cur].r: return tree[cur].val if tree[cur].l &gt; r or tree[cur].r &lt; l: return 0 if tree[cur].lazy: pushdown(cur) return max(query(cur&lt;&lt;1, l, r), query(cur&lt;&lt;1|1))# 测试# -----# ---# -------# --# --build(1, 1, 10)update(1, 1, 5, 1)update(1, 7, 10, 1)update(1, 2, 8, 1)update(1, 3, 4, 1)update(1, 9, 10, 1)print(query(1, 1, 10))# 返回为3]]></content>
+    <content type="text"><![CDATA[最近在参加秋招，头条面试的时候遇到一道题感觉很契合实际场景，唤起了我对线段树的记忆题目是这样的： 给出一份服务器一天的log文件，包含用户id，登录时间，登出时间，求当天服务器最大在线人数是多少 当时看完这个题第一反应就是可以用线段树，但是线段树我以前只是了解了一下概念和适用场景，没有真正仔细研读，趁此机会算是好好学习了一下 线段树网上的教程一搜一大把，不过很少有Python版本的，能搜到的也都没有区间更新或者是维护节点和，而不是求最大值，所以把我的版本贴出来 1234567891011121314151617181920212223242526272829303132333435363738394041424344454647484950515253545556575859606162636465666768697071727374757677787980818283848586# 定义树节点，l,r, val表示该节点记录的是区间[l, r]的最大值是valclass Tree(): def __init__(self): self.l = 0 self.r = 0 self.lazy = 0 self.val = 0 # 二叉树是堆形式，可以用一维数组存储，注意数组长度要开4倍空间tree = [Tree() for i in range(10*4)]# 建树，用cur&lt;&lt;1访问左子树，cur&lt;&lt;1|1访问右子树，位运算操作很方便def build(cur, l, r): tree[cur].l, tree[cur].r, tree[cur].lazy, tree[cur].val = l, r, 0, 0 # 当l==r的时候结束递归 if l &lt; r: mid = l + r &gt;&gt; 1 build(cur&lt;&lt;1, l, mid) build(cur&lt;&lt;1|1, mid+1, r)# 当子节点计算完成后，用子节点的值来更新自己的值def pushup(cur): tree[cur].val = max(tree[cur&lt;&lt;1].val, tree[cur&lt;&lt;1|1].val) # 单点更新def add(cur, x, v): if tree[cur].l == tree[cur].r: tree[cur].val += v else: mid = tree[cur].r + tree[cur].l &gt;&gt; 1 if x &gt; mid: add(cur&gt;&gt;1|1, x, v) else: add(cur&lt;&lt;1, x, v) pushup(cur)# 将lazy标记向下传递一层def pushdown(cur): if tree[cur].lazy: lazy = tree[cur].lazy tree[cur&lt;&lt;1].lazy += lazy tree[cur&lt;&lt;1|1].lazy += lazy tree[cur&lt;&lt;1].val += lazy tree[cur&lt;&lt;1|1].val += lazy tree[cur].lazy = 0# 区间更新def update(cur, l, r, v): if l &lt;= tree[cur].l and tree[cur].r &lt;= r: tree[cur].lazy += v tree[cur].val += v return if r &lt; tree[cur].l or l &gt; tree[cur].r: return if tree[cur].lazy: pushdown(cur) update(cur&lt;&lt;1, l, r, v) update(cur&lt;&lt;1|1, l, r, v) pushup(cur)# 区间查询def query(cur, l, r): if l &lt;= tree[cur].l and tree[cur].r &lt;= r: return tree[cur].val if tree[cur].l &gt; r or tree[cur].r &lt; l: return 0 if tree[cur].lazy: pushdown(cur) return max(query(cur&lt;&lt;1, l, r), query(cur&lt;&lt;1|1))# 测试# -----# ---# -------# --# --build(1, 1, 10)update(1, 1, 5, 1)update(1, 7, 10, 1)update(1, 2, 8, 1)update(1, 3, 4, 1)update(1, 9, 10, 1)print(query(1, 1, 10))# 返回为3]]></content>
       <categories>
         <category>Technology</category>
       </categories>
@@ -19,8 +19,8 @@
         <category>Technology</category>
       </categories>
       <tags>
-        <tag>Image Retrieval</tag>
         <tag>CV</tag>
+        <tag>Image Retrieval</tag>
         <tag>Fine-Grained Image Analysis</tag>
       </tags>
   </entry>
@@ -32,8 +32,8 @@
         <category>Technology</category>
       </categories>
       <tags>
-        <tag>Image Retrieval</tag>
         <tag>CV</tag>
+        <tag>Image Retrieval</tag>
         <tag>Deep Learning</tag>
         <tag>FAISS</tag>
       </tags>
@@ -70,9 +70,9 @@
         <category>Technology</category>
       </categories>
       <tags>
+        <tag>Image Retrieval</tag>
         <tag>FPN</tag>
         <tag>ROIalign</tag>
-        <tag>Image Retrieval</tag>
       </tags>
   </entry>
   <entry>
@@ -94,8 +94,8 @@
         <category>Technology</category>
       </categories>
       <tags>
-        <tag>Image Retrieval</tag>
         <tag>CV</tag>
+        <tag>Image Retrieval</tag>
         <tag>Deep Learning</tag>
       </tags>
   </entry>
