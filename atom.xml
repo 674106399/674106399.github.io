@@ -6,7 +6,7 @@
   <link href="/atom.xml" rel="self"/>
   
   <link href="http://yoursite.com/"/>
-  <updated>2020-04-24T14:30:40.586Z</updated>
+  <updated>2020-05-07T07:05:38.581Z</updated>
   <id>http://yoursite.com/</id>
   
   <author>
@@ -17,11 +17,11 @@
   <generator uri="http://hexo.io/">Hexo</generator>
   
   <entry>
-    <title></title>
-    <link href="http://yoursite.com/2020/04/19/%E8%AE%BA%E6%96%87SubSpace%20Capsule%20Network/"/>
-    <id>http://yoursite.com/2020/04/19/论文SubSpace Capsule Network/</id>
-    <published>2020-04-19T13:43:39.565Z</published>
-    <updated>2020-04-24T14:30:40.586Z</updated>
+    <title>论文阅读：SubSpace Capsule Network</title>
+    <link href="http://yoursite.com/2020/03/16/%E8%AE%BA%E6%96%87SubSpace%20Capsule%20Network/"/>
+    <id>http://yoursite.com/2020/03/16/论文SubSpace Capsule Network/</id>
+    <published>2020-03-16T14:14:53.000Z</published>
+    <updated>2020-05-07T07:05:38.581Z</updated>
     
     <content type="html"><![CDATA[<h1 id="论文阅读：SubSpace-Capsule-Network"><a href="#论文阅读：SubSpace-Capsule-Network" class="headerlink" title="论文阅读：SubSpace Capsule Network"></a>论文阅读：SubSpace Capsule Network</h1><h2 id="摘要"><a href="#摘要" class="headerlink" title="摘要"></a>摘要</h2><p>本文提出了子空间胶囊网络（SCN），该网络应用胶囊网络的思想，通过一组胶囊子空间对实体的外观或隐式定义的属性的可能变化进行建模，而不是简单地将神经元分组来创建胶囊。使用一个可学习的变换，通过将输入特征向量从较低层投影到胶囊子空间上来创建胶囊。 此变换找到输入与胶囊子空间建模的属性的相关程度。</p><p>本文展示的 SCN 是一个通用的胶囊网络，可以被应用于 GAN，在test 阶段不会产生多余的计算开销。通过使用生成对抗网络（GAN）框架对监督图像分类，半监督图像分类和高分辨率图像生成任务进行全面的实验，评估了SCN的有效性。 SCN显着提高了所有3个任务中基准模型的性能。</p><h2 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h2><p>一个胶囊是由一组神经元定义的，它们可以完备地对不同属性进行建模，例如姿态、纹理、一个实体的整体或局部形变等。胶囊网络的每一层由很多个胶囊组成。一个训练好的胶囊网络，每个胶囊的激活向量表示实体的实例化参数，且向量的长度表示那个特征或特征组件的存在可能性分数。本文尽管依旧遵循胶囊的主要定义，但提出的子空间胶囊网络是基于一个输入特征向量和一组学好的子空间之间的相关程度。在 SCN 中，每个专属的胶囊子空间是通过相关的实体或实体组件来学习的。然后通过使用基于对应胶囊子空间定义的学习变换，把输入向量投影到胶囊子空间中来创建胶囊。从直觉上讲，一个胶囊子空间捕捉了一个实体或实体组件的视觉属性的变换（如外观，姿态，纹理和形变等），一个子空间的输出特征的长度表示了该输入特征与该子空间所对应属性之间的相关程度。因此，如果一个子空间有一个很大的激活向量，这意味着该输入特征跟该子空间所对应的属性高度相关，反之亦然。这种创建子空间胶囊的形式与基于路由机制的形式是互相独立的，因此可以很容易地应用到大型网络中。</p><p>与本工作最相关的工作是胶囊投影网络（CapProNet），它极少量地应用了基于子空间的胶囊到图像分类网络的最后一层，且只需要胶囊的长度来进行预测。在一个 N 分类任务中，会学习一组胶囊子空间$${S_1,…,S_N}$$ ，每个类的胶囊通过输入骨干网络特征向量到每个子空间的正交投影来创建。输入图片归类到拥有最大胶囊长度的类别上。与 CapProNet 不同的是，SCN 同时对子空间胶囊和胶囊长度进行了研究。以下是本文的贡献：</p><ul><li>SCN 是一种通用的胶囊模型，可以直接应用到生成模型和判别模型中</li><li>SCN 计算量很小，在test 阶段不会增加额外的计算开销；在 train 阶段使用第五节的方法，增加的计算量也微乎其微</li><li>使用了 SCN 的 GAN ，生成的样本有至少20%的 FID score 提升</li><li>在 CIFAR10和 SVH 数据集的半监督分类任务中，SCN 达到了 SOAT，且两个数据集的提升均23%以上</li><li>SCN 很容易迁移到大型网络结构上。当应用到 ResNet 的最后一个 Block 上，Top1错误率有相对于之前5%的提升（PS：这里说法很 tricky，并不是准确率直接提升了5%，而是提升的比例相对于之前是5%）</li></ul><h2 id="模型架构"><a href="#模型架构" class="headerlink" title="模型架构"></a>模型架构</h2><p><img src="../images/WX20200424-181509@2x.png" alt="WX20200424-181509@2x"></p><p>a) 生成器中，隐式表示 z 在第一层以 c=16维被投影到10个胶囊子空间中，具有最大的向量的胶囊被选中，然后变形为一个25x2x2的立方体，然后上采样来翻倍空间分辨率为4x4.该立方通过2层 sc-conv，每层都进行上采样操作来得到16x16的分辨率。最终的 sc-conv 层具有8个子空间胶囊类型，每个8维，这一层的输出会被变形来生成图片。</p><p>b)判别器中，使用6个卷积层提取特征，后面接3个 sc-conv 层，每层都含有64个子空间胶囊类型，1个子空间胶囊平均池化层和最终一个具有10个胶囊类型的子空间胶囊全连接层(sc-fc)。</p><p>SCN 的关键在于找到输入特征与胶囊子空间之间的相关程度，因此本文设计了投影矩阵和子空间，以及胶囊激活函数和子空间胶囊平均池化。</p><h3 id="胶囊子空间投影"><a href="#胶囊子空间投影" class="headerlink" title="胶囊子空间投影"></a>胶囊子空间投影</h3><p>对于layer k， 假如 x 是一个来自于 layer k-1的 d 维向量。假设一个 c 维的胶囊子空间 S 是由权重矩阵 W (d x c)的列的跨度构成的，c 远小于 d</p><p>最直观的方式来寻找特征向量 x 于胶囊子空间 S 的相关程度的方法，是把 x 正交投影到 S，该问题的一个近似解决方案是：$$y = W(W^TW)^{-1}W^Tx, P=W(W^TW)^{-1}W^T$$ ，P 是到 S 的正交投影矩阵，y 是 x 在 S 的投影。y 的长度越大，x 与 S 越相关，换言之，x 有越多的属性由 S 建模。</p><p>然而，投影矩阵 P 主要的缺点在于是一个正方形矩阵，这意味着如果我们创建一个 d 维特征 x 使用 P投影到 S得到的胶囊，那么这个胶囊也是在 d 维空间里的。实际上，在深度模型中 d 通常是很大的，使用正交投影矩阵 P 得到不同的胶囊类型会需要大量的内存。为了能够通过子空间胶囊层序列从各种大小的胶囊中受益，需要进行一种变换，来允许将输入特征向量 x 映射到胶囊子空间的 c 维空间，同时仍保留网络中连续的层的胶囊之间的关系。我们提出使用变换矩阵$$P_c$$ 代表的中间域来表示胶囊子空间。该矩由分解正交投影矩阵 P 得到：</p><p>$P=P_dP_c….(2)$  </p><p>$P_d=W(W^TW)^{-1/2}, P_c=(W^TW)^{-1/2}W^T$</p><p>这里 $$P_c$$ 是把输入特征 x 映射到 c 维胶囊空间的变换，$$P_d$$ 是让胶囊空间中的投影向量回到原始的 d 维输入向量空间的变换。现在，与胶囊子空间 S 相关的胶囊可以通过将特征向量 x 投影到 c 维胶囊子空间得到：</p><p>$u=P_cx….(4)$</p><p>这里 u 代表 x 在胶囊空间中的低维表示。矩阵 P是一个半定对称矩阵。因此它的分解如式子(2)所示具有特殊属性。本文证明了使用$$P_c$$ 创建的胶囊具有相同的实例化参数信息和特征存在性分数，因为它是由变换 P 得到的，具体证明过程见原文。</p><h3 id="激活函数"><a href="#激活函数" class="headerlink" title="激活函数"></a>激活函数</h3><p>本文基于对胶囊输出向量长度的解释，应用了两种激活函数在子空间胶囊上。胶囊输出向量的长度可以从置信度的角度解释。一个高置信度的胶囊说明输入向量跟该胶囊子空间是高度相关的。换言之，输入向量包含了该胶囊子空间建模的实体。本文也希望通过激活函数来抑制噪声胶囊的效果，从这个角度我们提出了”sparking”函数：</p><p>$v = max(||u||-b^2, 0)\frac{u}{||u||}….(5)$</p><p>b 是一个可学习的参数。</p><p>直觉上，如果 x 跟子空间S 建模的实体相关，sparking 函数会提升胶囊确定性；如果它的长度小于阈值$$b^2$$，则完全关闭胶囊。初始时$$b^2=0.25$$ ，在训练时更新它。</p><p>另一种可能性是将由胶囊子空间建模的实体的存在概率与输出胶囊的长度相关联。对于这种情况，本文遵循 Hinton 提出的”squashing”函数：</p><p>$v = \frac{||u||^2}{1+||u||^2}\frac{u}{||u||}….(6)$</p><p>本文发现 sparking 函数在判别任务中更有效，比如半监督图像分类，因为它通过关闭噪声胶囊输出稀疏特征图加速了收敛。噪声胶囊是指每层中表示的属性与输入图片无关的胶囊，它们仍然会产生一个小的激活向量。然而在生成模型中，通过使用 squashing 激活函数来得到小而非零的值能提高生成样本的质量。</p><h3 id="子空间胶囊卷积"><a href="#子空间胶囊卷积" class="headerlink" title="子空间胶囊卷积"></a>子空间胶囊卷积</h3><p>SCN 也可以从CNN权重共享的思维中受益，通过在图像的所有空间位置上使用相同的子空间胶囊类型。在子空间胶囊卷积中，如果输入 x 有 i 张特征图，而我们希望创建一个 感受野维 k 的c 维的子空间胶囊卷积核，我们需要基于权重矩阵 W（$$(i\times k \times k)\times c$$）构建变换矩阵$$P_c$$ 。我们可以把投影矩阵$$P_c$$的每一行看成一个 $$i \times k\times k$$ 的卷积核，对输入特征图进行卷积并生成输出胶囊的单个元素。所以如果$$P_c$$ 被重组到一个形如$$c \times i\times k \times k$$ 的4维张量，那么它可以被作为标准的卷积操作使用，且对应于每个空间位置的胶囊会被摆放在输出特征图的相应位置。现在，如果我们想有 n 个子空间胶囊类型，我们可以创建一组投影矩阵{$$P_{c1},…,P_{cn}$$} ，把它们分别重组成4维张量后拼接到一起来创建一个形如$$nc \times i \times k \times k$$ 的核，至此，我们使用一个四元组(n,c,k,k)来表示子空间胶囊卷积层</p><h3 id="子空间胶囊平均池化"><a href="#子空间胶囊平均池化" class="headerlink" title="子空间胶囊平均池化"></a>子空间胶囊平均池化</h3><p>平均池化的思想很自然地来自于子空间胶囊卷积。在子空间胶囊卷积中，相同类型的胶囊表示相同的视觉属性不论空间位置。因此可以安全地假设$$k \times k$$ 的小感受野中相同类型胶囊具有相似的方向，并且可以用一个它们的均值计算得到的胶囊来代表它们全部。</p><h2 id="投影矩阵实现"><a href="#投影矩阵实现" class="headerlink" title="投影矩阵实现"></a>投影矩阵实现</h2><p>投影矩阵$$P_c$$包含计算量非常大的操作$$W^TW$$，如果不能正确实现，会极大拖慢训练过程。本文中，使用了Denman-Beavers 迭代方法的稳定扩展。对于任意的正定（半定）矩阵 A，存在一个唯一对称正定（半定）平方根矩阵。在所有训练过程中，我们设置迭代次数 k=20.这只极小地增加训练时间。 而在训练结束后，胶囊投影矩阵$$P_c$$就固定了，不再需要额外的时间。</p>]]></content>
     
@@ -34,27 +34,14 @@
     
     </summary>
     
+      <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
-  </entry>
-  
-  <entry>
-    <title></title>
-    <link href="http://yoursite.com/2019/11/24/%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%9ASee%20Better%20Before%20Looking%20Closer%20Weakly%20Supervised%20Data%20Augmentation%20Network%20for%20Fine-Grained%20Visual%20Classification/"/>
-    <id>http://yoursite.com/2019/11/24/论文阅读笔记：See Better Before Looking Closer Weakly Supervised Data Augmentation Network for Fine-Grained Visual Classification/</id>
-    <published>2019-11-24T07:29:23.730Z</published>
-    <updated>2019-11-24T15:22:16.339Z</updated>
     
-    <content type="html"><![CDATA[<h1 id="See-Better-Before-Looking-Closer-Weakly-Supervised-Data-Augmentation-Network-for-Fine-Grained-Visual-Classification"><a href="#See-Better-Before-Looking-Closer-Weakly-Supervised-Data-Augmentation-Network-for-Fine-Grained-Visual-Classification" class="headerlink" title="See Better Before Looking Closer: Weakly Supervised Data Augmentation Network for Fine-Grained Visual Classification"></a>See Better Before Looking Closer: Weakly Supervised Data Augmentation Network for Fine-Grained Visual Classification</h1><h2 id="Abstract"><a href="#Abstract" class="headerlink" title="Abstract"></a>Abstract</h2><p>数据增强被广泛用于提升训练数据的规模，避免过拟合，以及提升深度模型性能。然而在实际应用中，随机数据增强方法，比如随机图片裁剪，是比较低效的，且容易引入很多无法控制的背景噪声。</p><p>本文我们提出了一种弱监督数据增强网络(WS-DAN)来探索数据增强的潜力。具体来讲，对于每一张训练图片，我们首先通过弱监督学习方法生成attention maps 来表征对象的代表性区域。然后我们用 attention maps 来指导图片增强，包括 attention cropping 和 attention dropping.</p><p> 我们提出的 WS-DAN 方法分两步提升了分类准确率。在第一阶段中，由于提取了更多具有代表性的区域的特征，图片可以被”看”得更好。在第二阶段中，注意力区域提供了准确的对象定位，这确保了我们的模型可以更”近”地观看图片并进一步提升性能。</p><p>在公共细粒度图像分类数据集上的综合实验显示，WS-DAN 超越了已有的 the-state-of-the-art方法。</p><h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>数据增强是一种频繁使用的策略，通过增加数据多样性的方式增加训练数据，以提升深度模型的泛化能力。它已被证明在大多数的计算机视觉任务（如目标分类，检测，分割）中是非常有效的。然而，随机采样的裁剪区域有很大概率包含了很多背景噪声，这可能降低训练效率，影响特征提取的质量，进而抵消其产生的收益。为了提升数据增强的效率，模型应该知道目标对象的空间信息。</p><p>细粒度图像分类的目标是对某一基本类型下的子类进行分类，比如鸟的种类，车型，飞机型号等。细粒度图像分类极具挑战性，原因有三：</p><ol><li>高类内差异。属于同一类别的对象通常呈现出明显不同的姿态和视角。</li><li>低类间差异。属于不同类别的对象相较于那些细小的区别，可能有的部位高度相似，比如一只鸟头部的颜色风格通常决定了其种类。</li><li>有限的训练数据。为细粒度种类打标通常需要专业知识，以及大量的标注时间。</li></ol><p>基于以上原因，只使用最先进的粗分类模型（如 VGG，ResNet，Inception）很难得到高准确率。</p><p>在最近的工作中已经指出，细粒度图像分类的关键步骤在于从多个对象的部位中提取更具有代表性的局部特征。然而，”对象的部位”是很难定义的，且对象与对象之间差异很大。并且，为这些局部区域进行打标也需要大量额外人力。</p><p>在我们的工作中，我们利用弱监督学习只依靠图片级的标注来定位对象的代表性的部位。我们使用 attention maps 来表征对象的部位，而不是提出对象部位的兴趣 bbox。我们还提出双线性注意力池化（bilinear attention pooling）和注意力标准化损失函数（attentino regularization loss）来对注意力生成过程进行弱监督。我们的方法比其他进行对象部位定位的模型能更容易地定位大量对象的部位，因而取得了更好的性能。</p><p>获得对象部位的位置后，我们提出注意力指导的数据增强来高效地增加训练数据，并解决以上提到的高类内差异，低类间差异问题。</p>]]></content>
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
-    <summary type="html">
+      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
     
-      
-      
-        &lt;h1 id=&quot;See-Better-Before-Looking-Closer-Weakly-Supervised-Data-Augmentation-Network-for-Fine-Grained-Visual-Classification&quot;&gt;&lt;a href=&quot;#See-B
-      
-    
-    </summary>
-    
+      <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
     
   </entry>
   
