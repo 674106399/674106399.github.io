@@ -6,7 +6,7 @@
   <link href="/atom.xml" rel="self"/>
   
   <link href="http://yoursite.com/"/>
-  <updated>2020-05-07T07:05:38.581Z</updated>
+  <updated>2020-06-15T12:03:01.740Z</updated>
   <id>http://yoursite.com/</id>
   
   <author>
@@ -17,11 +17,40 @@
   <generator uri="http://hexo.io/">Hexo</generator>
   
   <entry>
+    <title>论文阅读：Web-Scale Responsive Visual Search at Bing</title>
+    <link href="http://yoursite.com/2020/06/14/%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0%EF%BC%9AWeb-Scale%20Responsive%20Visual%20Search%20at%20Bing/"/>
+    <id>http://yoursite.com/2020/06/14/论文阅读笔记：Web-Scale Responsive Visual Search at Bing/</id>
+    <published>2020-06-14T10:39:00.000Z</published>
+    <updated>2020-06-15T12:03:01.740Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="摘要"><a href="#摘要" class="headerlink" title="摘要"></a>摘要</h2><p>本文中我们介绍了微软 bing所使用的全网通用视觉搜索系统。该系统在索引中容纳数百亿张图像，每一张图像有数千个特征，可以在不到200毫秒内做出响应。为了克服在如此大规模的数据中相关性、延迟和可伸缩性方面的挑战，我们采用了基于各种最新深度学习可视化特性的级联learning-to-rank框架，部署在分布式异构计算平台上。定量和定性实验都表明，我们的系统可以支持 bing 网页和应用程序上的各种应用。</p><h2 id="1-介绍"><a href="#1-介绍" class="headerlink" title="1 介绍"></a>1 介绍</h2><p>视觉搜索，或者基于内容的图像检索，是一个热门而且长期的研究领域。给定一张图片，视觉搜索系统会返回一个排好序的视觉近似图片列表。通过将查询图片与返回图片列表的所有已知信息进行关联，就能派生出各种各样的应用，比如，定位一张照片是在哪里拍的；从自拍照里识别时尚物品。因此，业内也对此有浓厚兴趣。</p><p>相关性是视觉搜索的主要目标与度量标准。随着最近深度学习的发展，视觉搜索系统在相关性上也有了增进，变得可以更好地被普通消费者使用。已经有业内人士在视觉搜索系统上做出了探索，但他们的工作更多地关注于某个专门的、垂直的系统的可行性，比如，Pinterest 或 eBay 上的图片，并且缺乏对更高级目标的讨论，如相关性、延迟和存储空间占用。本文中，我们将提供微软 Bing 视觉搜索系统的一个综述，希望能为建立一个相关的、反应敏捷的、可扩展的全网视觉搜索引擎提供思路。据作者所知，这是第一个介绍通用全网视觉搜索引擎的工作。</p><p>全网视觉搜索引擎不仅仅是将现有的视觉搜索方法扩展到更大的数据库。这里的『全网规模』意味着数据库并不局限于一个特定的垂直方向或一个特定网站，而是来自于一个通用网络搜索引擎的爬虫。通常这个数据库包含了上百亿张图片，甚至更多。在这种数量级的数据量下，主要挑战来自于三个方面：</p><ol><li><p>很多在小数据集上可行的方法变得不切实际了。比如，Bag of Visual Words 方法通常需要把倒排索引存进内存里以获得高效的检索。假设每张图有差不多100个特征点，这些倒排索引的数据量就接近4TB了，更不用说还有如何高效地进行聚类和量化来生成合理的视觉单词等问题了。</p></li><li><p>即使能正确地分片，存储可扩展性也依然是一个问题。假设我们每张图只使用一条视觉特征，用4096维的 AlexNet 的 fc7层特征，然后把这些特征分片存储到100台机器上，每台机器仍然需要用1.6TB 来存储特征。要知道这些特征不能存储在一般的硬盘上，否则其低随机访问性能会使得搜索延迟变得无法接受。</p></li><li>现代视觉搜索引擎通常使用 learning-to-rank 架构来充分利用多个特征的信息互补，以获得最好的相关性。在一个全网数据库中，这也会造成另一种延迟问题。即使图片的检索可以并行，查询特征提取、分片实例之间的数据流控制，以及最终数据聚合都需要复杂的算法和工程优化。</li></ol><p>除了以上三点以外，通用搜索引擎还有另一个独立的挑战。一个垂直的、专门的搜索引擎通常有一个元数据具有良好组织的受控的图像数据库。然而，通用视觉搜索引擎并不是这样，元数据经常是无组织的，甚至是不可用的。这就更加强调了理解图片内容的能力。</p><p>换言之，一个同时满足高相关性、低延迟、高存储可扩展性的全网视觉搜索系统是很难的。我们提出用巧妙的工程权衡来解决这一困境。具体来说，我们提出用一个级联的 learning-to-rank 框架来权衡相关性和延迟，采用Product Quantization(PQ)方法来权衡相关性与存储空间占用，用配备了SSD的集群来平衡延迟与存储可扩展性。</p><p>在该框架中，分片的倒排索引被用于过滤掉绝无关联的数据库图片，生成一个候选者列表，然后更具描述力也更吃算力的视觉特征用于对候选者进行进一步的重排序，它们中的顶端候选者被传递给最终一级的排序器。在最终级排序器中，最丰富翔实的视觉特征被用于检索，并喂进 LambdaMART 排序模型来取得查询对象与每个候选图片之间的相似性评分，并根据该评分生成排序列表。</p><h2 id="2-系统概述"><a href="#2-系统概述" class="headerlink" title="2 系统概述"></a>2 系统概述</h2><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing_img1.png" alt="bing_img1"></p><p>在深入了解系统是如何工作之前，我们先介绍一下工作流。当一个用户上传了一张他在网上找到的或自己拍的查询图片到 bing 中，视觉上相似的图片和商品会被识别出来供用户了解和购买（比如图一所示）。bing 视觉搜索系统包括了下文介绍的三个主要阶段。图二展示了查询图片如何转换为最终结果图像的一般处理工作流。</p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing_img2.png" alt="bing_img2"></p><p><strong>Query understanding 查询理解</strong>：我们从查询图片提取各种各样的特征来描述它的内容，包括DNN编码器，种类识别特征，人脸识别特征，颜色特重和重复检测特征。我们也会生成一个图片标题，用于鉴别查询图片中的关键概念。然后调用场景触发模型来决定在视觉搜索中是否调用不同的场景。比如，当从查询中检测到了购物意图时，将定向搜索一个特定的内容，在特定的购物细分下对内容进行丰富。图一展示了一个相关商品购物场景的用户界面的例子。Bing 视觉搜索系统返回带有购物信息的结果列表，如商店网站链接和价格。用户可以沿着链接去店铺网站上进行购买。目标检测模型也会运行来检测目标，用户可以通过鼠标单击自动标定的对象来查阅相关商品和相关图片。</p><p><strong>Image retrieval 图像检索</strong>：繁重的工作发生在图像检索模块中，该模块根据提取的特征和意图检索视觉上相似的图像。如之前所介绍的，图像检索过程有一个级联式的框架，把整个过程拆分为 Level-0匹配器，Level-1排序器和 Level-2排序器三个阶段。这个模块的细节在后文会有介绍。在排好序的列表生成好以后，我们进行后处理（postprocessing）操作来根据需要去掉重复结果和成人内容。最终的结果集合会被返回给用户。</p><p><strong>Model training 模型训练</strong>：检索过程中使用的多个模型都需要一个训练阶段。第一，我们的系统中利用了多个DNN模型来提高相关性。每个模型由于不同的训练数据、网络结构和损失函数，能独立地提供互补信息。第二，一个联合的 k-means 算法用于在 Level-0匹配器中建立倒排索引。第三，PQ 用于优化深度模型的服务延迟而不损失太多相关性。目标检测模型对于提升用户体验也有帮助。关于这些模型的细节我们会在后文介绍。</p><h2 id="3-方法"><a href="#3-方法" class="headerlink" title="3 方法"></a>3 方法</h2><p>本章将介绍我们如何处理相关性、延迟和存储可扩展性的细节，以及一些其他额外的特征比如目标检测。</p><h3 id="3-1-Relevance-相关性"><a href="#3-1-Relevance-相关性" class="headerlink" title="3.1 Relevance 相关性"></a>3.1 Relevance 相关性</h3><p>为了优化搜索相关性，我们使用了多种特征，其中DNN 特征效果最显著。我们使用了几个 SOAT 模型，包括 AlexNet, ZFSPPNet, GoogleNet和 ResNet。最后一个隐藏层用于提取深度 embedding 特征。我们用多个数据源来训练这些模型，包括人工标注和从网络上爬的，同时也可能使用开源数据集。我们的训练集广泛地覆盖了日常生活中的上千种主要类别，还针对特定领域（比如购物）收集了深入的训练数据集。我们采用多个损失函数来监督深度模型的训练，比如 softmax loss，pairwise loss 和 triplet loss。在表一中完整总结了我们使用的特征。</p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/WX20200615-194801@2x.png" alt="WX20200615-194801@2x"></p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing_img3.png" alt="bing_img3"></p><p>图三展示了三个我们所使用的深度模型的例子。图三(a)是一个目标检测模型，在查询图片上对目标进行定位和相应的语义类别分类。图三(b)是一个softmax商品分类网络。我们使用特定领域的存储库（包括时尚物品、家用家居、电子产品等）生成产品类别分类和训练数据。种类集合涵盖了上千个细分种类，例如帽子的十个子类如棒球帽、遮阳帽、软呢帽。我们使用 Inception-BN 网络来获得准确率和延迟的折中。网络使用各种组合的超参数从零开始训练。在视觉搜索排序器中，使用了pool5层的DNN 特征和 softmax 层的种类特征。图三(c)是一个 triplet 网络，直接学习从图片到欧式空间的 embedding，特征点之间的距离对应了图像的相似程度。该网络在一个很大的人工标注的图片三元组$$(Q,I_1,I_2)$$集合上训练，每一个标注者回答I1和 I2哪个跟 Q 更相似。我们用 ImageNet 数据在一个预训练的神经网络上微调这个 triplet 网络，要降低的损失函数为：</p><p>$$L=\sum_{i=1}^{N}(|f(x_i^{query})-f(x_i^{pos})|^2 - |f(x_i^{query})-f(x_i^{neg})|^2 + margin)_+ ….(1)$$</p><p>这里 f(x)表示原本神经网络的最后一个全连接层后面新加的稠密 embedding 层，并且这个 embedding 层被作为视觉搜索中另一个神经网络特征来使用。</p><p>各种各样的神经网络特征、非神经网络特征、目标检测和文本匹配特征被聚合与利用在视觉搜索排序器中。更多的细节在表一中列出。我们也使用局部特征来消除重复图片。我们使用一个 基于ranking loss 的LambdaMART 排序模型来读入特征向量，输出最终排序评分。最终结果图片按评分进行排序。排序器的训练数据收集方式类似于 triplet 模型的训练数据收集。我们还用了一个额外的回归模型用于将一行一行形式的 pair-wise判断转化为 list-wise 判断，作为 LambdaMART 排序模型训练的 ground truth。</p><h3 id="3-2-Latency-延迟"><a href="#3-2-Latency-延迟" class="headerlink" title="3.2 Latency 延迟"></a>3.2 Latency 延迟</h3><p>图片索引包含了上百亿的图片，因此要提供敏捷的用户反馈体验是很具有挑战性的。我们设计了一个级联式的排序框架来达到相关性与延迟的良好平衡。直觉上，过滤掉『无望』的候选者比检索到视觉相关的图片要简单得多。因此，简单特征可以用于显著缩小搜索空间，之后再用复杂而富含信息的特征来进行高质量的重排序。倒排索引可以用于生成初始的候选者集合。</p><p>如图四所示，级联式排序框架包括了 Level-0匹配器，Level-1排序器和 Level-2排序器。Level-0匹配器阶段基于倒排索引生成初始候选者集合。按照Arandjelovic et al.的提出方法，我们使用联合 k-means 训练得到的视觉单词作为图片的简单特征表达，细节如图五所示。量化之后，每张图用 N 个视觉单词来表示。只保留与查询图像的视觉单词相匹配的索引图像，并将其发送给 Level-1排序器。</p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing_img4.png" alt="bing_img4"></p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing_img5.png" alt="bing_img5"></p><p>视觉单词可以在几毫秒内把候选者集合从十亿级缩减到几百万量级，然而这还是太多了。因此我们使用轻量级的 Level-1排序器来进一步减少候选者数量，这一步使用单一的神经网络特征。考虑到特征的存储和计算欧式距离的成本，我们采用了 PQ 方法来节省开支，其中的直觉与视觉词袋方法类似。我们没有对高维向量做处理，而是使用聚类中心来作为近似的特征向量。由于聚类中心之间的距离可以预先计算好，距离计算的时间可以大大缩短。又因为只用存图片ID和一个字典，空间消耗也极大地节省了。图六显示了一个高维向量分解成许多低维子向量，从而形成一个 PQ 向量。首先我们把DNN 特征通过 PCA降维到4n 维。然后每个新的4n 维的向量被分成 n 个4维向量，PQ 模型的最近的聚类中心由每个4维向量决定。最终每个神经网络编码器可以由只占 n 个字节的中心点 ID 表示，从而形成一个 PQ 向量，然后特征距离可以近似地由计算查询图片的 PQ 向量$${PQ_i^q}_{i=1}^n$$和候选图片的 PQ 向量$${PQ_i^c}_{i=1}^n$$的距离得到。要注意每个$$PQ_i^q$$和$$PQ_i^c$$ 的欧式距离可以预先计算并缓存起来。</p><p>作为 Level-1排序器的结果，候选集合可以从百万级减小到数千张图片。在此刻，我们就可以用更加吃计算量的 Level-2排序器来进行更精准的图片排序了。所有 Level-2排序器中用到的DNN 特征也都用了 PQ 加速。</p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing_img6.png" alt="bing_img6"></p><h3 id="3-3-Storage-存储"><a href="#3-3-Storage-存储" class="headerlink" title="3.3 Storage 存储"></a>3.3 Storage 存储</h3><p>所有我们级联式框架中需要的特征都被存入内存以获得高效检索。我们用 PQ IDs 而不是真实数值来表示 DNN 特征，这能极大减小存储需求。例如，一张图片的2048维的 ResNet DNN 编码器的空间需求，通过PCA 和 PQ可以从8KB 降低到25bytes（假如每次4维向量聚类成256个类，PQ 中设置 n=25）。视觉词汇用于减少匹配阶段的存储需求。具体来说，每张图的视觉词汇集合只占用64bytes。最后，我们把所有特征（包括视觉词汇倒排索引和 PQ IDs）分片存储到几百台机器上，来进一步缓解计算和存储压力。并且用上一节中介绍的三层式结构来高效管理分布式索引。</p><h3 id="3-4-目标检测"><a href="#3-4-目标检测" class="headerlink" title="3.4 目标检测"></a>3.4 目标检测</h3><p>我们使用了 SOAT的目标检测技术来为用户提供简单而精确的视觉搜索输入指导。举例来说，如果用户在搜索服装灵感，我们可以预测用户的搜索/购物意图，并自动检测用户感兴趣的多个对象并进行标记，因此用户不再需要摆弄边框（手动裁剪图片）。我们从多种深度学习目标检测框架中选择了两种方案以取得速度和准确性的平衡：Faster R-CNN 和 Single Shot Multi-box Detection(SSD)。在训练中我们实验了各种各样的骨干网络结构和调参来得到准确率和召回率最高的模型。时尚物品和家具是目标检测模型最开始的目标。为节省计算开销，目标检测模型只会当从查询图片中检测到特定的视觉意图时才会运行。目标检测模块除了提供准确的定位 bbox，还提供了目标的类别预测。我们用预测的类别与存在的图片类别进行匹配以进一步提高相关性。</p><h3 id="3-5-工程"><a href="#3-5-工程" class="headerlink" title="3.5 工程"></a>3.5 工程</h3><p>我们绘制了整个视觉搜索处理的全貌，然后发现最耗时的阶段是特征提取和相似图片检索（Level-0, Level-1, Level-2）。因此，我们在这两个模块中进行了工程优化来减少系统延迟和提高开发敏捷度。</p><p><strong>CPU 上特征提取</strong>：由于这个项目在 GPU 加速还没有普及的时候就开始了，我们开发了一个被称为神经网络工具集（NNTK）的库用来优化 CPU 上的DNN 模型部署。所有的核心操作（如矩阵乘法和卷积运算）都用最新版本的汇编语言指令编写。我们还小心优化了卷积层前向传播中不同通道的尺寸和特征图尺寸来使得它们可以被友好地缓存。我们还用了线程级、机器级的并行策略以及负载均衡来进一步提高吞吐量。</p><p>考虑到不同应用场景可能需要不同的特征，为了能灵活地重新组织特征提取 pipeline而不需要费时的重新编译，我们开发了一种Domain Specific Language(DSL)。（PS：后面关于DSL 的介绍不太感兴趣，我就不翻译了）</p><p><strong>GPU 上特征提取</strong>：随着工业级 GPU 加速的 DNN 框架（如 CNTK和 Caffe）出现，我们是最早把图像搜索引擎服务栈部署到GPU 上的团队之一。基于 GPU 的 DNN 推理可以加速特征提取10-20倍（识模型而定）。我们把延迟敏感的模型比如目标检测模型，部署到Azure 的弹性 GPU 集群上，取得了40ms 的延迟。正确地对系统进行缓存还可以进一步降低延迟和开销。</p><p><strong>高效分布式检索</strong>：除了级联式框架外，我们还使用了分布式框架来加速图像检索和重排序系统，其瓶颈主要在于 Level-0匹配器和特征检索。Level-0匹配器的倒排索引检索阶段在上百台机器上并行完成。特征被存储在 SSD 上，性能比存放在普通机械硬盘上好得多。</p><h2 id="4-应用"><a href="#4-应用" class="headerlink" title="4 应用"></a>4 应用</h2><p>（描述了一些应用场景，跟操作指南差不多，没什么重点也不翻译了 hhh）</p><h2 id="5-实验"><a href="#5-实验" class="headerlink" title="5 实验"></a>5 实验</h2><p>本章我们提供了本系统的评价指标，按照主要动机，我们使用相关性、延迟和存储消耗来评估一个图像搜索引擎。我们也提供了一些定性结果来显示一般结果质量和系统使用体验。</p><p><strong>相关性</strong>：NDCG 用于评估相关性。从 bing 的搜索历史记录中我们准备了一个几千张查询图片的测试集。用这些查询图片，我们从 Bing和其他搜索引擎拿到了最相关的候选图片。然后我们询问人工标注员来进行候选图片相关性的 pair-wise 判断，基于此来作为排序模型的 ground truth。基于这个测试集，我们用搜索引擎给候选图片排序，并计算 NDCG@5作为最终度量指标。</p><p>这个度量指标有利有弊。一个理想的评估搜索引擎相关性的方式是得到每个查询图片与所有图片的相关性排序，但在百亿级的图片上，这是不可行的。这是在受约束的测试集上计算 NDCG 的优点：这个方案的标注工作量是可接受的。然而当分析评分数值时，我们也应当知道，只有 Level-2排序器模块是用这个方法评估的，前面的模块不影响 NDCG 数值。</p><p>在表二中，我们记录了本系统的 NDCG@5和不同的单一特征 baseline。所有表中列出的 DNN 模型都是在几千个分类的 Bing 数据集上训练得到的。从表中数据我们可以看出，选用的 DNN 特征确实提供了互补信息，提高了相关性。我们也分析了如何取舍存储和相关性对相关性的影响：表三比较了使用行 DNN 特征的系统的 NDCG@5，使用 PCA 降维的 DNN 特征，PCA 顶部用 PQ 量化的 DNN 特征。</p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/WX20200615-195404@2x.png" alt=""></p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing3.png" alt="bing3"></p><p><strong>延迟</strong>：我们在表四中测量并报告了端到端和组件方式的系统延迟。如第4节所述，从技术角度来看，存在两种不同的方案。 一种是查询图像在我们的索引中，其中视觉发现是预期的用法。 另外一个是用户上传查询，或者当用户指定裁剪框对感兴趣区域进行可视搜索时上传的查询。 在前一种情况下，因为我们已经具有视觉特征，所以可以通过节省网络传输和特征提取时间来减少系统延迟。 后一种情况将显示更长的延迟，因为我们必须进行成熟的特征提取。 从表中可以看出，由于级联重排模块的先进优化，延迟瓶颈实际上是视情况而定的视觉特征的检索或计算。 请注意，当前特征提取仍在CPU上执行，如果使用GPU，则将大大加速。</p><p><img src="/Users/billow/Desktop/674106399.github.io/source/images/bing4.png" alt="bing4"></p>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h2 id=&quot;摘要&quot;&gt;&lt;a href=&quot;#摘要&quot; class=&quot;headerlink&quot; title=&quot;摘要&quot;&gt;&lt;/a&gt;摘要&lt;/h2&gt;&lt;p&gt;本文中我们介绍了微软 bing所使用的全网通用视觉搜索系统。该系统在索引中容纳数百亿张图像，每一张图像有数千个特征，可以在不到200毫秒内做
+      
+    
+    </summary>
+    
+      <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
+    
+    
+      <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
+    
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
+    
+      <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
+    
+  </entry>
+  
+  <entry>
     <title>论文阅读：SubSpace Capsule Network</title>
-    <link href="http://yoursite.com/2020/03/16/%E8%AE%BA%E6%96%87SubSpace%20Capsule%20Network/"/>
-    <id>http://yoursite.com/2020/03/16/论文SubSpace Capsule Network/</id>
-    <published>2020-03-16T14:14:53.000Z</published>
-    <updated>2020-05-07T07:05:38.581Z</updated>
+    <link href="http://yoursite.com/2020/04/19/%E8%AE%BA%E6%96%87SubSpace%20Capsule%20Network/"/>
+    <id>http://yoursite.com/2020/04/19/论文SubSpace Capsule Network/</id>
+    <published>2020-04-19T14:14:53.000Z</published>
+    <updated>2020-05-07T07:06:18.266Z</updated>
     
     <content type="html"><![CDATA[<h1 id="论文阅读：SubSpace-Capsule-Network"><a href="#论文阅读：SubSpace-Capsule-Network" class="headerlink" title="论文阅读：SubSpace Capsule Network"></a>论文阅读：SubSpace Capsule Network</h1><h2 id="摘要"><a href="#摘要" class="headerlink" title="摘要"></a>摘要</h2><p>本文提出了子空间胶囊网络（SCN），该网络应用胶囊网络的思想，通过一组胶囊子空间对实体的外观或隐式定义的属性的可能变化进行建模，而不是简单地将神经元分组来创建胶囊。使用一个可学习的变换，通过将输入特征向量从较低层投影到胶囊子空间上来创建胶囊。 此变换找到输入与胶囊子空间建模的属性的相关程度。</p><p>本文展示的 SCN 是一个通用的胶囊网络，可以被应用于 GAN，在test 阶段不会产生多余的计算开销。通过使用生成对抗网络（GAN）框架对监督图像分类，半监督图像分类和高分辨率图像生成任务进行全面的实验，评估了SCN的有效性。 SCN显着提高了所有3个任务中基准模型的性能。</p><h2 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h2><p>一个胶囊是由一组神经元定义的，它们可以完备地对不同属性进行建模，例如姿态、纹理、一个实体的整体或局部形变等。胶囊网络的每一层由很多个胶囊组成。一个训练好的胶囊网络，每个胶囊的激活向量表示实体的实例化参数，且向量的长度表示那个特征或特征组件的存在可能性分数。本文尽管依旧遵循胶囊的主要定义，但提出的子空间胶囊网络是基于一个输入特征向量和一组学好的子空间之间的相关程度。在 SCN 中，每个专属的胶囊子空间是通过相关的实体或实体组件来学习的。然后通过使用基于对应胶囊子空间定义的学习变换，把输入向量投影到胶囊子空间中来创建胶囊。从直觉上讲，一个胶囊子空间捕捉了一个实体或实体组件的视觉属性的变换（如外观，姿态，纹理和形变等），一个子空间的输出特征的长度表示了该输入特征与该子空间所对应属性之间的相关程度。因此，如果一个子空间有一个很大的激活向量，这意味着该输入特征跟该子空间所对应的属性高度相关，反之亦然。这种创建子空间胶囊的形式与基于路由机制的形式是互相独立的，因此可以很容易地应用到大型网络中。</p><p>与本工作最相关的工作是胶囊投影网络（CapProNet），它极少量地应用了基于子空间的胶囊到图像分类网络的最后一层，且只需要胶囊的长度来进行预测。在一个 N 分类任务中，会学习一组胶囊子空间$${S_1,…,S_N}$$ ，每个类的胶囊通过输入骨干网络特征向量到每个子空间的正交投影来创建。输入图片归类到拥有最大胶囊长度的类别上。与 CapProNet 不同的是，SCN 同时对子空间胶囊和胶囊长度进行了研究。以下是本文的贡献：</p><ul><li>SCN 是一种通用的胶囊模型，可以直接应用到生成模型和判别模型中</li><li>SCN 计算量很小，在test 阶段不会增加额外的计算开销；在 train 阶段使用第五节的方法，增加的计算量也微乎其微</li><li>使用了 SCN 的 GAN ，生成的样本有至少20%的 FID score 提升</li><li>在 CIFAR10和 SVH 数据集的半监督分类任务中，SCN 达到了 SOAT，且两个数据集的提升均23%以上</li><li>SCN 很容易迁移到大型网络结构上。当应用到 ResNet 的最后一个 Block 上，Top1错误率有相对于之前5%的提升（PS：这里说法很 tricky，并不是准确率直接提升了5%，而是提升的比例相对于之前是5%）</li></ul><h2 id="模型架构"><a href="#模型架构" class="headerlink" title="模型架构"></a>模型架构</h2><p><img src="../images/WX20200424-181509@2x.png" alt="WX20200424-181509@2x"></p><p>a) 生成器中，隐式表示 z 在第一层以 c=16维被投影到10个胶囊子空间中，具有最大的向量的胶囊被选中，然后变形为一个25x2x2的立方体，然后上采样来翻倍空间分辨率为4x4.该立方通过2层 sc-conv，每层都进行上采样操作来得到16x16的分辨率。最终的 sc-conv 层具有8个子空间胶囊类型，每个8维，这一层的输出会被变形来生成图片。</p><p>b)判别器中，使用6个卷积层提取特征，后面接3个 sc-conv 层，每层都含有64个子空间胶囊类型，1个子空间胶囊平均池化层和最终一个具有10个胶囊类型的子空间胶囊全连接层(sc-fc)。</p><p>SCN 的关键在于找到输入特征与胶囊子空间之间的相关程度，因此本文设计了投影矩阵和子空间，以及胶囊激活函数和子空间胶囊平均池化。</p><h3 id="胶囊子空间投影"><a href="#胶囊子空间投影" class="headerlink" title="胶囊子空间投影"></a>胶囊子空间投影</h3><p>对于layer k， 假如 x 是一个来自于 layer k-1的 d 维向量。假设一个 c 维的胶囊子空间 S 是由权重矩阵 W (d x c)的列的跨度构成的，c 远小于 d</p><p>最直观的方式来寻找特征向量 x 于胶囊子空间 S 的相关程度的方法，是把 x 正交投影到 S，该问题的一个近似解决方案是：$$y = W(W^TW)^{-1}W^Tx, P=W(W^TW)^{-1}W^T$$ ，P 是到 S 的正交投影矩阵，y 是 x 在 S 的投影。y 的长度越大，x 与 S 越相关，换言之，x 有越多的属性由 S 建模。</p><p>然而，投影矩阵 P 主要的缺点在于是一个正方形矩阵，这意味着如果我们创建一个 d 维特征 x 使用 P投影到 S得到的胶囊，那么这个胶囊也是在 d 维空间里的。实际上，在深度模型中 d 通常是很大的，使用正交投影矩阵 P 得到不同的胶囊类型会需要大量的内存。为了能够通过子空间胶囊层序列从各种大小的胶囊中受益，需要进行一种变换，来允许将输入特征向量 x 映射到胶囊子空间的 c 维空间，同时仍保留网络中连续的层的胶囊之间的关系。我们提出使用变换矩阵$$P_c$$ 代表的中间域来表示胶囊子空间。该矩由分解正交投影矩阵 P 得到：</p><p>$P=P_dP_c….(2)$  </p><p>$P_d=W(W^TW)^{-1/2}, P_c=(W^TW)^{-1/2}W^T$</p><p>这里 $$P_c$$ 是把输入特征 x 映射到 c 维胶囊空间的变换，$$P_d$$ 是让胶囊空间中的投影向量回到原始的 d 维输入向量空间的变换。现在，与胶囊子空间 S 相关的胶囊可以通过将特征向量 x 投影到 c 维胶囊子空间得到：</p><p>$u=P_cx….(4)$</p><p>这里 u 代表 x 在胶囊空间中的低维表示。矩阵 P是一个半定对称矩阵。因此它的分解如式子(2)所示具有特殊属性。本文证明了使用$$P_c$$ 创建的胶囊具有相同的实例化参数信息和特征存在性分数，因为它是由变换 P 得到的，具体证明过程见原文。</p><h3 id="激活函数"><a href="#激活函数" class="headerlink" title="激活函数"></a>激活函数</h3><p>本文基于对胶囊输出向量长度的解释，应用了两种激活函数在子空间胶囊上。胶囊输出向量的长度可以从置信度的角度解释。一个高置信度的胶囊说明输入向量跟该胶囊子空间是高度相关的。换言之，输入向量包含了该胶囊子空间建模的实体。本文也希望通过激活函数来抑制噪声胶囊的效果，从这个角度我们提出了”sparking”函数：</p><p>$v = max(||u||-b^2, 0)\frac{u}{||u||}….(5)$</p><p>b 是一个可学习的参数。</p><p>直觉上，如果 x 跟子空间S 建模的实体相关，sparking 函数会提升胶囊确定性；如果它的长度小于阈值$$b^2$$，则完全关闭胶囊。初始时$$b^2=0.25$$ ，在训练时更新它。</p><p>另一种可能性是将由胶囊子空间建模的实体的存在概率与输出胶囊的长度相关联。对于这种情况，本文遵循 Hinton 提出的”squashing”函数：</p><p>$v = \frac{||u||^2}{1+||u||^2}\frac{u}{||u||}….(6)$</p><p>本文发现 sparking 函数在判别任务中更有效，比如半监督图像分类，因为它通过关闭噪声胶囊输出稀疏特征图加速了收敛。噪声胶囊是指每层中表示的属性与输入图片无关的胶囊，它们仍然会产生一个小的激活向量。然而在生成模型中，通过使用 squashing 激活函数来得到小而非零的值能提高生成样本的质量。</p><h3 id="子空间胶囊卷积"><a href="#子空间胶囊卷积" class="headerlink" title="子空间胶囊卷积"></a>子空间胶囊卷积</h3><p>SCN 也可以从CNN权重共享的思维中受益，通过在图像的所有空间位置上使用相同的子空间胶囊类型。在子空间胶囊卷积中，如果输入 x 有 i 张特征图，而我们希望创建一个 感受野维 k 的c 维的子空间胶囊卷积核，我们需要基于权重矩阵 W（$$(i\times k \times k)\times c$$）构建变换矩阵$$P_c$$ 。我们可以把投影矩阵$$P_c$$的每一行看成一个 $$i \times k\times k$$ 的卷积核，对输入特征图进行卷积并生成输出胶囊的单个元素。所以如果$$P_c$$ 被重组到一个形如$$c \times i\times k \times k$$ 的4维张量，那么它可以被作为标准的卷积操作使用，且对应于每个空间位置的胶囊会被摆放在输出特征图的相应位置。现在，如果我们想有 n 个子空间胶囊类型，我们可以创建一组投影矩阵{$$P_{c1},…,P_{cn}$$} ，把它们分别重组成4维张量后拼接到一起来创建一个形如$$nc \times i \times k \times k$$ 的核，至此，我们使用一个四元组(n,c,k,k)来表示子空间胶囊卷积层</p><h3 id="子空间胶囊平均池化"><a href="#子空间胶囊平均池化" class="headerlink" title="子空间胶囊平均池化"></a>子空间胶囊平均池化</h3><p>平均池化的思想很自然地来自于子空间胶囊卷积。在子空间胶囊卷积中，相同类型的胶囊表示相同的视觉属性不论空间位置。因此可以安全地假设$$k \times k$$ 的小感受野中相同类型胶囊具有相似的方向，并且可以用一个它们的均值计算得到的胶囊来代表它们全部。</p><h2 id="投影矩阵实现"><a href="#投影矩阵实现" class="headerlink" title="投影矩阵实现"></a>投影矩阵实现</h2><p>投影矩阵$$P_c$$包含计算量非常大的操作$$W^TW$$，如果不能正确实现，会极大拖慢训练过程。本文中，使用了Denman-Beavers 迭代方法的稳定扩展。对于任意的正定（半定）矩阵 A，存在一个唯一对称正定（半定）平方根矩阵。在所有训练过程中，我们设置迭代次数 k=20.这只极小地增加训练时间。 而在训练结束后，胶囊投影矩阵$$P_c$$就固定了，不再需要额外的时间。</p>]]></content>
     
@@ -37,9 +66,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
-    
       <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
+    
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
       <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
     
@@ -95,9 +124,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
-    
       <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
+    
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
       <category term="Fine-Grained Image Analysis" scheme="http://yoursite.com/tags/Fine-Grained-Image-Analysis/"/>
     
@@ -124,9 +153,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
-    
       <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
+    
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
       <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
     
@@ -210,11 +239,11 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
+    
       <category term="FPN" scheme="http://yoursite.com/tags/FPN/"/>
     
       <category term="ROIalign" scheme="http://yoursite.com/tags/ROIalign/"/>
-    
-      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
   </entry>
   
@@ -223,7 +252,7 @@
     <link href="http://yoursite.com/2018/05/28/2018-5-28/"/>
     <id>http://yoursite.com/2018/05/28/2018-5-28/</id>
     <published>2018-05-28T13:44:12.000Z</published>
-    <updated>2018-05-31T17:41:49.953Z</updated>
+    <updated>2020-05-07T07:09:30.611Z</updated>
     
     <content type="html"><![CDATA[<p>2018.5.28 21:00 成都-&gt;北京</p><p>在生活中你我应该都有过这样的经历：自己的某种想法、某种情感、某种感受，找不到任何词句来形容，不论怎么组织语言，表达出来的东西似乎都离自己内心的那个点差了些什么。</p><p>你我应该也都有过这种体验：某时某刻，突然听到某个人说的一句话，某首歌的一节词，某篇文章的一些句子，突然直戳内心，道尽了你一直以来难以言表的某些东西，使你感到从内到外的深切共鸣。</p><p>夏目漱石曾有一个经典的比喻，他形容日语是高情境的语言，当日本人希望表达“我爱你”时，用“月色真美”将会更加恰当。木心说“文字的简练来源于内心的真诚，我十二万分的爱你，就不如说，我爱你”。</p><p>我们的思想、情感、感受、思维，应该是一种很高维度的东西，而相比之下，我们的语言是低维的。所以才会出现那么多的词不达意、难以言说。</p>]]></content>
     
@@ -266,9 +295,9 @@
       <category term="Technology" scheme="http://yoursite.com/categories/Technology/"/>
     
     
-      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
-    
       <category term="CV" scheme="http://yoursite.com/tags/CV/"/>
+    
+      <category term="Image Retrieval" scheme="http://yoursite.com/tags/Image-Retrieval/"/>
     
       <category term="Deep Learning" scheme="http://yoursite.com/tags/Deep-Learning/"/>
     
